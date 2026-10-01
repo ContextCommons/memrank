@@ -29,8 +29,8 @@ with evidence. Memrank provides both the evaluation framework and the evaluation
   </picture>
 </a>
 
-*Answer quality against median memory retrieval time (log scale) for the memory systems published
-on the BEAM 100K board at [memrank.ai](https://memrank.ai).*
+<sub>*Answer quality against median memory retrieval time (log scale) for the memory systems published
+on the BEAM 100K board at [memrank.ai](https://memrank.ai).*</sub>
 
 ## How it works
 
