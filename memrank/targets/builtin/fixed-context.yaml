@@ -1,0 +1,24 @@
+# (b) the corpus unranked, capped at the same --token-budget as the engine under test
+# (PRD_Memrank_v2.md:86). Token-matching is what makes it fair -- same context size, so the only
+# variable is whether ranked retrieval beats reading the corpus as it came.
+#
+# NOT "ICL", which is what this was called until 2026-08-19. In-context learning means few-shot
+# DEMONSTRATIONS that induce a task (Brown et al. 2020; Dong et al., ACL 2024) -- labelled examples,
+# not knowledge. This arm injects knowledge and teaches no task, so the old name promised a reader
+# something the row did not measure. No memory benchmark surveyed (LoCoMo, LongMemEval, Mem0, Zep,
+# MemGPT, A-Mem, HippoRAG) runs a few-shot control at all; it is not part of this control set.
+#
+# The nearest published counterparts are LoCoMo's "Base" and MemGPT's "fixed-context baselines".
+# CAVEAT ON THE BORROWED NAME: MemGPT's fixed-context means bounded by the MODEL'S context window.
+# This arm is bounded by the RETRIEVAL token budget, which is a different bound -- see
+# docs/methodology.md, which defines it rather than leaning on the borrowed term.
+#
+# KNOWN DEFECT, not yet fixed: the budget truncates from the HEAD, so this arm reads the OLDEST
+# turns. LoCoMo's Base omits earlier dialogues instead, and the RAG-vs-long-context literature names
+# prefix-truncation as an unfair-baseline pattern. Until that is fixed the arm is a strawman and its
+# score understates what reading-at-a-budget can do.
+name: fixed-context
+kind: in-process
+adapter: fixed-context
+transport: in-process
+context_budget: matched

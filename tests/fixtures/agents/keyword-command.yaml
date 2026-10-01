@@ -1,0 +1,8 @@
+# The model-free keyword agent through the command connector. Run from the repository root;
+# its memory lands in results/ (gitignored).
+name: keyword-agent
+version: command
+connector: command
+reset: ["{python}", tests/fixtures/agents/keyword_agent.py, results/keyword-agent, reset, "{session_id}"]
+feed: ["{python}", tests/fixtures/agents/keyword_agent.py, results/keyword-agent, feed, "{session_id}"]
+ask: ["{python}", tests/fixtures/agents/keyword_agent.py, results/keyword-agent, ask, "{session_id}", "{question}"]

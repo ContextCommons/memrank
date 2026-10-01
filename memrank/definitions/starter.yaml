@@ -1,0 +1,62 @@
+# A memrank evaluation: your own cases, run with
+#
+#   memrank evals check this-file.yaml                       # validate it; runs no agent
+#   memrank run this-file.yaml --agent ./my-agent.yaml       # evaluate an agent on it
+#
+# Runs on the same evaluation are compared under its name and version, and every run also
+# records a fingerprint of this file (and of any program it names), so a changed file is
+# never mistaken for the old one. Bump `version` when you change a case or how it is graded.
+
+name: my-eval             # lowercase letters, digits, '.', '_' or '-'
+version: "1"
+description: What this evaluation checks, in a sentence.
+
+# How questions are graded unless a question says otherwise. Built in:
+#   exact    the answer equals `answer` once both are lowercased, with punctuation,
+#            articles (a, an, the) and extra spaces removed
+#   choice   the answer picks the right one of `choices`, by its letter or its text
+#   numeric  the last number in the answer is within `tolerance` of `answer`
+#            e.g. grade: {kind: numeric, tolerance: 0.5}
+#   judge    the judge model decides whether the answer matches `answer`
+#   rubric   the judge model scores each `rubric` line 0, 0.5 or 1; the score is the mean
+# or your own program, which reads {question, answer, reference, ...} as JSON on stdin and
+# prints {"score": <0 to 1>, "why": "..."}:
+#            grade: {command: ["{python}", grade.py]}
+# `judge` and `rubric` use your organisation's Anthropic key; the others need no key.
+# A question with its own `grade` uses that; one with a `rubric` or `choices` is graded by
+# rubric or choice; any other by this default (judge when there is none).
+grade: judge
+
+# Each case is past conversations the agent is given first (`history`, optional), then
+# `questions` about them. Every case starts from a clean memory. Cases can also live in a
+# JSONL file, one case per line:            cases: {file: cases.jsonl}
+# or be printed by a program, one JSON case per line (memrank adds --seed N):
+#                                           cases: {command: ["{python}", make_cases.py]}
+cases:
+  - id: trip
+    history:
+      - timestamp: "2026-03-02"
+        turns:
+          - {role: user, text: "I'm flying to Lisbon on the 14th, back on the 21st."}
+          - {role: assistant, text: "Noted: Lisbon, the 14th to the 21st."}
+    questions:
+      - id: trip-city
+        question: Which city am I flying to?
+        answer: Lisbon
+        grade: exact
+      - id: trip-nights
+        question: How many nights will I be away?
+        answer: 7
+        grade: numeric
+      - id: trip-summary
+        question: Summarise my travel plans.
+        rubric:
+          - Names Lisbon as the destination
+          - Gives the 14th to the 21st as the dates
+
+  # A case with no history: the question alone.
+  - id: capital
+    question: What is the capital of Australia?
+    choices: [Sydney, Canberra, Melbourne]
+    answer: Canberra
+    category: general-knowledge

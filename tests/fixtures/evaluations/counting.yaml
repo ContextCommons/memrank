@@ -1,0 +1,5 @@
+# Cases printed by a program (given --seed), graded by a program.
+name: counting
+version: "1"
+grade: {command: ["{python}", grade_contains.py]}
+cases: {command: ["{python}", make_cases.py, --count, "3"]}

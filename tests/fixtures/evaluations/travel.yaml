@@ -1,0 +1,38 @@
+# A hand-written evaluation: exact, numeric, judged, choice and program-graded questions, one
+# case with history and one without. Used by tests/definitions and the end-to-end witness.
+name: travel
+version: "2"
+description: Remembers a trip, and answers one question with no history.
+cases:
+  - id: trip
+    history:
+      - timestamp: 2026-03-02
+        turns:
+          - {role: user, text: "I am flying to Lisbon on the 14th and back on the 21st."}
+          - {role: assistant, text: "Noted."}
+    questions:
+      - id: trip-city
+        question: Which city am I flying to?
+        answer: Lisbon
+        grade: exact
+        category: recall
+      - id: trip-nights
+        question: How many nights will I be away?
+        answer: 7
+        grade: numeric
+        category: arithmetic
+      - id: trip-when
+        question: When do I fly to Lisbon?
+        answer: On the 14th
+        grade: judge
+        category: recall
+      - id: trip-mentions
+        question: Where am I flying?
+        answer: lisbon
+        grade: {command: ["{python}", grade_contains.py]}
+        category: recall
+  - id: capital
+    question: What is the capital of Australia?
+    choices: [Sydney, Canberra, Melbourne]
+    answer: B
+    category: general-knowledge

@@ -1,0 +1,10 @@
+# Okapi BM25 with the conventional k1=1.5 and b=0.75, in plain Python and with no dependency
+# (ATO-2259). The arm `word-overlap.yaml` says this repository has deliberately NOT had until
+# now: this one really is BM25 -- saturating term frequency, smoothed IDF, length normalisation.
+#
+# The parameters are the adapter's constructor defaults. A run that moves them is a different
+# method under the same name, so it says so at the call site rather than here.
+name: bm25
+kind: in-process
+adapter: bm25
+transport: in-process

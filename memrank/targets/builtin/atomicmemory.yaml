@@ -1,0 +1,23 @@
+# Our own engine. transport = "http" (memrank/adapters/atomicmemory.py:48) and the cloud taskdef
+# runs it as a single container with no datastore sidecar, so: kind stack, no depends.
+#
+# The embedder model/dims are stated here now that memrank/targets/engine_env.py names the vars the
+# ENGINE reads (EMBEDDING_MODEL / EMBEDDING_DIMENSIONS) rather than the ones the adapter scrapes
+# from its own environment (ATOMICMEMORY_EMBEDDER_MODEL / _DIMS). Both renderers derive from that
+# table, so a value declared here reaches the process.
+#
+# CAVEAT: these are TRANSCRIBED from scripts/cloud-run.sh:199-200 defaults, not read back from a
+# running engine. describe_engine()'s cross-check (M2.5) does not cover atomicmemory, so unlike
+# mem0 this pair is asserted rather than verified.
+name: atomicmemory
+kind: stack
+adapter: atomicmemory
+transport: http
+engine:
+  artifact: atomicmemory
+  port: 17350
+components:
+  llm: {provider: anthropic, model: claude-sonnet-4-5-20250929}
+  embedder: {provider: transformers, model: Xenova/all-MiniLM-L6-v2, dims: 384}
+compose: atomicmemory.compose.yaml
+service: engine

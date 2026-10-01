@@ -1,0 +1,52 @@
+# hindsight at the depth its own benchmark harness (AMB) publishes -- the vendor's configuration,
+# which is what a bare ref means. `hindsight:matched` is memrank's budget-matched arm.
+#
+# THE BARE REF IS THE VENDOR'S. Until 2026-08-19 this file was the matched arm and the faithful one
+# was `hindsight:amb`, which is the opposite of how mem0 is arranged and was nobody's decision. A
+# ref names the configuration its OWNER ships; the MODE is carried by `context_budget` and by
+# nothing else.
+#
+# Results answer "can we land near their published figure" and MUST NOT enter the leaderboard.
+#
+# Transcribed from vectorize-io/agent-memory-benchmark's hindsight provider, the configuration
+# behind their published LoCoMo 92.0 / LongMemEval 94.6: budget=high, max_tokens=32768 facts,
+# max_chunk_tokens=16384 raw chunks. Those runs average
+# 36k-44k context tokens per question -- roughly 8x memrank's matched budget, which is precisely
+# why this cannot be a matched-mode target.
+#
+# Unreproducible from here: their published rows answer with gemini-3.1-pro-preview under
+# per-question-type judge prompts copied from the original benchmark; our judge is Anthropic with
+# generic prompts. That alone can move a judged number.
+#
+# LLM-only configurability: hindsight exposes no embedder knob
+# (docs/research/2026-07-29-memory-engine-configurability-and-forks.md).
+# Single container in the cloud taskdef, so no depends.
+name: hindsight
+kind: stack
+adapter: hindsight
+# The adapter class declares no transport, so receipts recorded "unknown" before this.
+transport: http
+# Port from deploy/ecs/taskdef.hindsight.json.tpl:21 -- the image's own, no PORT override.
+engine:
+  artifact: hindsight
+  port: 8888
+components:
+  llm: {provider: anthropic, model: claude-sonnet-4-5-20250929}
+context_budget: uncapped
+retrieval:
+  budget: high
+  max_tokens: 32768
+  chunk_max_tokens: 16384
+
+# AMB creates banks with observations OFF, even though hindsight ships them ON and the vendor's own
+# manifesto credits them as a top-3 driver of its gains. Set here rather than in `retrieval:` above
+# because it is fixed at bank creation and decides which of hindsight's four memory networks are
+# ever WRITTEN -- by recall time the answer cannot change (audit F6).
+#
+# The adapter reads the bank's config back after creating it and refuses to ingest if the engine
+# did not take this, because the PUT accepts unknown fields silently.
+ingest:
+  enable_observations: false
+
+compose: hindsight.compose.yaml
+service: engine

@@ -1,0 +1,11 @@
+# The keyword agent failing some answers (tests/fixtures/agents/flaky_agent.py), for local
+# witnesses of a run with questions the agent did not answer. memrank run starts it.
+name: flaky-agent
+version: openai-chat
+connector: openai-chat
+base_url: http://127.0.0.1:8102
+timeout_s: 1
+vars: {model: keyword}
+start:
+  argv: ["{python}", tests/fixtures/agents/flaky_agent.py, "8102"]
+  ready: http://127.0.0.1:8102/health

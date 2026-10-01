@@ -1,0 +1,9 @@
+# The model-free keyword agent behind the openai-chat preset. memrank run starts it.
+name: keyword-agent
+version: openai-chat
+connector: openai-chat
+base_url: http://127.0.0.1:8101
+vars: {model: keyword}
+start:
+  argv: ["{python}", tests/fixtures/agents/keyword_agent.py, serve, "8101"]
+  ready: http://127.0.0.1:8101/health

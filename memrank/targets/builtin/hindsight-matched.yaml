@@ -1,0 +1,19 @@
+# memrank's budget-matched hindsight: the engine's own retrieval defaults, held to the same token
+# budget as every other ranked target. THIS is the leaderboard row -- the bare `hindsight` is the
+# vendor's uncapped configuration and never enters an aggregate, chart or comparison.
+#
+# THE THREE LINES BELOW ARE NOT REDUNDANT, and `test_faithful_variants.py` fails if they go.
+# Since 2026-08-19 the base carries AMB's configuration, so silence here means budget=high,
+# 32768/16384 tokens and observations OFF -- deleting them would put the vendor's uncapped
+# configuration on the leaderboard under a matched name, which is the one thing matched mode
+# exists to prevent.
+#
+# `retrieval:` and `ingest:` with no value CLEAR the inherited blocks rather than merging into
+# them (merge() in memrank/targets/resolve.py replaces on a non-mapping child). Empty is a
+# positive statement: the adapter then applies its own defaults -- 8192 fact tokens, 8192 chunk
+# tokens, `budget` left to the engine's `mid`, and hindsight's shipped observations left ON.
+from: hindsight
+name: hindsight:matched
+context_budget: matched
+retrieval:
+ingest:

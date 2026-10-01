@@ -1,0 +1,9 @@
+# (c) full-context -- the ceiling where the knowledge base fits (PRD_Memrank_v2.md:86, "rare").
+# The corpus uncapped. Deliberately NOT a routine arm: PRD:57 bars any benchmark whose KB fits in a
+# current context window from headline status, and PRD:80 demotes LoCoMo (16k-26k tokens) for that
+# reason. Uncapped means the run records the tokens actually sent and whether truncation still bit.
+name: full-context
+kind: in-process
+adapter: full-context
+transport: in-process
+context_budget: uncapped

@@ -1,0 +1,98 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+.installed.cfg
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# Linting / typing
+.ruff_cache/
+.mypy_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / local env (adapters read API keys from the environment)
+.env
+.env.*
+!.env.example
+
+# Transient workflow files (commit/PR drafts written then deleted)
+commit-message.txt
+pr-description.md
+
+# Memrank-specific
+results/
+results-real/
+# Hand-made backups of a results tree; hundreds of MB, never source.
+results.bak-*/
+# Anchored: the legacy local run directory lives at the checkout root (run_registry.py treats
+# it as legacy and never writes it). Unanchored, this matched ANY directory named `runs` at any
+# depth -- including web-gui/app/.../runs and web-gui/components/runs, whose source files git
+# would then skip in silence. The bundle's own runs/ prefix stays ignored via `bundle/`.
+/runs/
+.memrank/
+# Local MLflow mirror store (see memrank/mlflow_export.py) -- disposable, per-machine
+mlflow.db
+mlruns/
+.herenow/
+bundle/
+votes-demo.jsonl
+votes-*.jsonl
+**/.fallow/cache.bin
+**/.fallow/churn.bin
+
+# Supabase CLI local state
+supabase/.temp/
+
+# local Battle Review dev stack runtime state (pidfiles + logs)
+.arena-local/
+
+# v66 repro runtime state
+scripts/internal/repro/spend_ledger.json
+
+# mem0 playground runtime data (vector store); .venv + __pycache__ already ignored above
+.mem0-data/
+
+# AWS coordinates resolved from terraform (account-specific ARNs; no secret values).
+# Regenerate with scripts/internal/aws-context.sh after `terraform apply`.
+.aws-context.json
+
+# Superpowers brainstorming mockups (local design scratch)
+.superpowers/
+
+# Impeccable local tooling state (hook cache, decision-page sessions)
+**/.impeccable/
+
+# Agent-local state: machine-specific settings and the worktree checkouts the
+# harness creates here. Both are per-machine, and the worktrees are whole clones.
+.claude/

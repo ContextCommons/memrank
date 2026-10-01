@@ -1,0 +1,15 @@
+# The full-context reference agent: no memory system, the whole history in the prompt.
+# memrank starts it for the run and stops it afterwards. Needs ANTHROPIC_API_KEY.
+# It answers with the run's evaluation's official reader prompt ({evaluation} below); the version
+# names that regime, so its rows never mix with the earlier "I don't know"-instructed reader's.
+name: full-context
+version: claude-haiku-4-5+official-reader
+description: No memory; answers from each session's entire history with claude-haiku-4-5.
+connector: openai-chat
+base_url: http://127.0.0.1:8765
+vars:
+  model: claude-haiku-4-5
+start:
+  argv: ["{python}", -m, memrank.runner, agents, serve, full-context,
+         --model, claude-haiku-4-5, --evaluation, "{evaluation}", --port, "8765"]
+  ready: http://127.0.0.1:8765/health

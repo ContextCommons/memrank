@@ -1,0 +1,15 @@
+# Deliberately malformed: every problem here is one a refusal must name.
+name: Broken Eval
+cases:
+  - id: one
+    questions:
+      - question: What colour is the car?
+        grade: exact
+      - question: Pick one
+        choices: [red, blue]
+        answer: green
+  - id: one
+    questions:
+      - question: How far?
+        answer: far
+        grade: {kind: numeric, tolerance: -1}

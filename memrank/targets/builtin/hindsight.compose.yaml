@@ -1,0 +1,32 @@
+# The containers `hindsight` needs. Plain Compose -- every field here is the Compose
+# Specification's, with published semantics, so an author needs no memrank-specific knowledge.
+#
+# The image is the vendor's own published build. Measuring what the vendor ships is what makes a
+# neutral benchmark neutral; a copy we rebuilt invites the question of what we changed.
+# scripts/internal/build-push-hindsight.sh mirrors exactly this reference into our registry for pull
+# reliability inside a region -- a deployment concern, which is why it is not named here.
+#
+# A RELEASED version, never `latest`. `latest` resolved to a build matching no version tag, so five
+# days and several vendor releases drifted past unnoticed while every receipt recorded
+# `engine_version: "latest"` -- a field that named no build. A version tag is both resolvable and
+# identifiable; `pin_images` still resolves it to a digest at launch, which is why this is a tag and
+# not a digest (`placement/registry.split_reference` refuses an already-pinned reference).
+#
+# Values that describe WHAT IS MEASURED -- the LLM model, the embedder -- are not written here.
+# They come from the manifest's `components:` block and reach the container through Compose
+# interpolation, so there is one place that says which model a target uses. Two places is how
+# `mem0:voyage` once ran bge-small in the cloud while its leaderboard row said voyage.
+services:
+  engine:
+    image: ghcr.io/vectorize-io/hindsight:0.6.2
+    # Target-only: the daemon binds port 0 and the kernel assigns. Never a chosen host port --
+    # two runs of the same target must be able to proceed at once.
+    ports: ["127.0.0.1::8888"]
+    # hindsight embeds its own Postgres (pg0), which runs index builds with
+    # maintenance_work_mem=512MB and up to 4 parallel workers, allocating that memory as a dynamic
+    # shared memory segment in /dev/shm. Docker's default /dev/shm is 64 MB, and a beam:100k run
+    # failed five cases on it: `could not resize shared memory segment ... to 533794944 bytes: No
+    # space left on device` (2026-09-29). 2g holds about three such builds at once -- one per case
+    # a concurrent run feeds -- and costs nothing until used, since /dev/shm is a tmpfs.
+    # Local only: Fargate cannot size /dev/shm (see ecs_compile.LOCAL_ONLY).
+    shm_size: 2g

@@ -1,0 +1,199 @@
+# The public/private boundary, as data.
+#
+# WHAT THIS IS. `ContextCommons/memrank` is produced from this repository by dropping every path
+# this file classifies `internal`. That projection is meant to be a mechanical prefix operation,
+# not a judgement call repeated by whoever runs it.
+#
+# HOW IT IS READ. A path is classified by its LONGEST matching prefix; `[exceptions]` overrides
+# any prefix. A prefix ending in `/` matches a directory; one that does not is an exact path.
+# `tests/repo/test_public_boundary.py` asserts that every tracked path resolves, that no public module
+# imports an internal one, and that the closure of the published entry points is public. It also
+# asserts that nothing UNTRACKED sits where a prefix here would publish it: a rule matches a
+# directory, so undecided material inherits a classification nobody made about it, and the
+# projector reads committed objects -- which puts the whole exposure in the commit that first
+# tracks the file.
+#
+# WHY THE EXCEPTIONS TABLE IS WRITTEN OUT. A boundary held as a per-file list rots the first time
+# someone adds a file, and it rots SILENTLY -- a new internal module simply goes unclassified and
+# surfaces later as a leak. Naming the 514 cases explicitly makes the remaining debt countable
+# and makes "done" checkable: Phases 2-4 of the plan exist to empty this table, and until they
+# have, the count below is the size of the debt.
+
+# The rule: public is the transitive import closure of the published entry points --
+# `memrank.runner`, `memrank.mcp_server`, `memrank.evaluation.api` -- plus the tests, docs and
+# examples that exercise them. Everything else is internal until deliberately promoted.
+public = [
+  # The manifest ships. It has to: `tests/repo/test_public_boundary.py` reads it, and a public tree
+  # that cannot check its own boundary is a boundary nobody checks after the split. Phase 2
+  # withheld it because the exceptions table then named 279 internal document filenames; the table
+  # is now one entry naming none. What remains is a list of PREFIXES, which says the internal repo
+  # has a web GUI and an arena -- both already public knowledge -- and says exactly what was
+  # dropped, which is the transparency this instrument claims elsewhere.
+  "publish.toml",
+  # The program that applies the manifest, and the twenty lines that read it. Public for the same
+  # reason the manifest is: `tests/repo/test_public_boundary.py` imports the classifier, so a published
+  # tree can check its own boundary instead of asking the reader to trust that someone did.
+  "tools/",
+  "memrank/",
+  "tests/",
+  "docs/",
+  "examples/",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+  "uv.lock",
+  ".python-version",
+  ".gitignore",
+  # The ONE file under `.github/` that ships, named exactly rather than by prefix: longest match
+  # wins, so this 32-character path beats the `.github/` internal rule below and nothing else in
+  # that directory moves. The public repository needs a CI workflow, and a projection of a commit
+  # cannot carry one that is not a tracked file here -- anything re-applied by hand after each
+  # export is a step that stops happening. The workflow itself is inert in THIS repository (it
+  # gates every job on `github.repository`); see its header.
+  #
+  # NOT an `[exceptions]` entry. `tools/internal/export_manifest.py` refuses those outright,
+  # because the denylist it emits deletes `.github` recursively on the consumer's side; the same
+  # hazard applies to this rule, and the generator now answers it by MATERIALISING the internal
+  # members of any internal prefix that also contains a public path. The exceptions table is
+  # reserved for boundary DEBT, and this is not debt.
+  ".github/workflows/public-ci.yml",
+]
+
+# The platform: the hosted API, the arena, the leaderboard, the operator tooling, and everything
+# that deploys them. Nothing in the public closure imports any of it.
+#
+# `docs-internal/` and `tests/internal/` are the destinations Phases 3 and 4 move into. Declaring them
+# before they are full is deliberate: the prefix is the contract, and a file that lands there is
+# classified from the moment it lands. `scripts/` is now internal WHOLE, so `scripts/internal/`
+# is no longer a rule -- the prefix above it says the same thing about more files.
+internal = [
+  "memrank/accounts/server/",
+  "memrank/api/",
+  "memrank/arena/",
+  "memrank/events/",
+  "memrank/leaderboard/",
+  "memrank/analysis/",
+  "memrank/ops/",
+  "docs-internal/",
+  # The Fern documentation site (ATO-2344). Internal until it is published: it describes the
+  # one-command install, the skill and evaluation files ahead of their release, with TODO
+  # markers naming the tickets that must land first, and nothing public reads it yet. It moves
+  # to `public` when the site is published and those markers are cleared.
+  "fern/",
+  "tests/internal/",
+  # `scripts/` in full, and the notebooks. Neither is what an outsider needs to install,
+  # run, interpret or extend memrank: `examples/` is the demonstration surface that ships,
+  # and the scripts are our own operating conveniences. ATO-1886.
+  "scripts/",
+  "notebooks/",
+  # Prototypes. `spikes/` holds working code written to be READ and reacted to -- a shape proposed
+  # for a future interface, running so it can be argued with, importing nothing from `memrank/` and
+  # imported by nothing in it. None of it ships: publishing a proposal beside the thing it proposes
+  # to replace is how an outsider ends up building against an interface nobody promised.
+  "spikes/",
+  "infra/",
+  "web-gui/",
+  "supabase/",
+  "services/",
+  "db/",
+  "deploy/",
+  "experiments/",
+  ".github/",
+  "public-export.json",
+  "export-policy.toml",
+  "tools/internal/",
+  "tech-debt.md",
+  "working-state.md",
+  "AGENTS.md",
+  "CLAUDE.md",
+  ".dockerignore",
+]
+
+# Per-file overrides. Every entry here is a place the tree does not yet match the boundary.
+#
+# `internal` shrinks to nothing as Phases 2-4 land: each `git mv` deletes the entries it makes
+# unnecessary, and the boundary test fails if a deletion was wrong.
+#
+# `public` is the other direction -- a file under an internal prefix that ships anyway. It is
+# EMPTY, and it should stay that way: the one entry it ever held,
+# `memrank/analysis/question_detail.py`, was there because `memrank/runs/reconcile.py` read two
+# directory-name constants from it. Those constants now live in `memrank/runs/artifacts.py` beside
+# the prefix they hang off, so `memrank/analysis/` is wholly internal exactly as the 2026-08-25
+# audit claimed. An entry here means some public module is reaching across the boundary for
+# something that belongs on its own side.
+#
+# Generated once by `scripts/internal/one-offs/generate-publish-manifest.py`; hand-maintained since.
+# One thing the projection must drop from `pyproject.toml` that a path cannot express.
+#
+# An optional-dependency group is a list of THIRD-PARTY package names; nothing inside
+# `api = [...]` classifies internal, because none of it is a repo path. What makes the group
+# internal is its SUBJECT -- `memrank/api/**`, which does not ship. `notebooks = [...]` is the
+# same shape for the same reason: JupyterLab exists in this project for `notebooks/**`, and
+# since ATO-1886 that does not ship either. An extra that installs 150 MB for a directory the
+# reader does not have is an offer nothing can accept.
+#
+# The PUBLICATION-GATE policy is deliberately NOT here -- see `export-policy.toml`, which is
+# internal. THIS file ships, and a list of literals that must never appear publicly is not a
+# list to publish: the sync tool greps the snapshot for each one, so a published copy would match
+# ITSELF and abort every export.
+[projection]
+drop_optional_dependencies = ["api", "notebooks"]
+
+[exceptions]
+internal = [
+  # This entry is LOAD-BEARING, and not for the reason it claimed until 2026-08-28. It used to
+  # say it was deferred pending the removal of a private engine from the catalog. That was wrong:
+  # the file never referenced that engine. It is internal because it imports
+  # `memrank.analysis.compare`, and `memrank/analysis/` is an internal prefix above -- a public
+  # file importing an internal module is exactly what `tests/repo/test_public_boundary.py` refuses.
+  #
+  # This comment deliberately names no engine: THIS FILE SHIPS, and the publication gate greps
+  # the published snapshot for a list of forbidden literals. A comment containing one would match
+  # the snapshot and abort every export, the same trap the note above the [projection] table
+  # describes for the denylist itself.
+  #
+  # The example is also broken independently: it imports a module that has since been renamed.
+  # See tech-debt.md.
+  "examples/more/compare-am-mem0.py",
+
+  # The `mem0` and `supermemory` targets, withheld pending ATO-1831 (2026-08-31, ATO-1824).
+  #
+  # Their engine images live only in our private ECR -- nothing is pushed to a public registry, and
+  # anonymous ghcr returns 403 -- so the compose files name a host no outsider can pull AND, because
+  # an ECR host contains the account id, one no public tree may name at all. The two are the same
+  # fact: an address that identifies our infrastructure is exactly an address only our
+  # infrastructure can resolve.
+  #
+  # Withholding rather than repointing is deliberate. Rewriting the address at
+  # `ghcr.io/atomicstrata/...` would ship a reference that resolves for nobody, including us, until
+  # the images are actually pushed.
+  #
+  # ATO-1831 SETTLED THIS ON 2026-09-02, AND THE ANSWER WAS THAT THEY STAY. Neither image is
+  # publishable: `mem0` runs a private fork, and `supermemory` wraps a closed vendor binary that is
+  # not ours to hand on. So these four entries are no longer pending a decision -- they record one,
+  # and `docs/misc/engine-images.md` states it per target for the reader. What ships for supermemory
+  # instead is the build recipe, `examples/supermemory-image/`, which redistributes nothing.
+  #
+  # The public suite no longer fails on their absence: `tests/withheld.py` makes a test that needs
+  # one of these refs SKIP with the reason stated, the way `tests/live/` skips for an absent
+  # backend. The three tests below stay internal for their own reason -- they assert on an ECR
+  # address, which a public tree may not name whatever is decided about the images.
+  #
+  # The manifests go with the graphs: a target whose `compose:` file is absent resolves to a broken
+  # catalog entry, which is worse than a catalog that does not offer it.
+  "memrank/targets/builtin/mem0.yaml",
+  "memrank/targets/builtin/mem0.compose.yaml",
+  "memrank/targets/builtin/supermemory.yaml",
+  "memrank/targets/builtin/supermemory.compose.yaml",
+
+  # The tests that key on the ECR address of the images above. They assert that the renderers
+  # reproduce an address written down deliberately, which is a fact about internal targets, and
+  # they import `TEST_REGISTRY` from `tests/internal/engine_images.py` -- the constant moved there
+  # because `tests/placement/conftest.py` ships and an ECR host carries the account id. Internal
+  # for as long as the targets they exercise are.
+  "tests/placement/test_compose_render.py",
+  "tests/placement/test_taskdef_render.py",
+  "tests/placement/test_local_placement.py",
+]
+
+public = []

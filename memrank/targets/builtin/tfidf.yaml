@@ -1,0 +1,10 @@
+# Term frequency times inverse document frequency, scored by the cosine of the two vectors --
+# the classic lexical baseline, in plain Python and with no dependency (ATO-2259).
+#
+# NAMED FOR THE METHOD, which is the point of it: a reader recognises TF-IDF and does not have to
+# be told what the number means. `word-overlap` is the same idea with neither half of the
+# weighting, and stays as the dumb-memory floor beneath this one.
+name: tfidf
+kind: in-process
+adapter: tfidf
+transport: in-process

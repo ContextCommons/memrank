@@ -1,0 +1,19 @@
+# (a) the no-retrieval floor from PRD_Memrank_v2.md:86.
+# Retrieves nothing, so the reader answers from parametric knowledge alone. An engine that does not
+# beat this is not earning its tokens. Only meaningful on a judged run: unjudged, nothing answers.
+#
+# NAMED FOR CLARITY, NOT FOR ATTESTATION -- and the distinction matters, because the rest of this
+# catalog names things after what the field calls them. The CONDITION is well established: open-
+# domain QA calls it "no-context" (Roberts et al., EMNLP 2020; LOFT uses it as a literal arm name)
+# and agent-memory work calls it "no-memory" (MemDelta's lower bound is `S0: No Memory`). Neither
+# term is what this ref is called. `no-context` is an exam metaphor that is opaque to a reader who
+# does not already know it, so this arm is named for what it withholds instead.
+#
+# It was `none` until 2026-08-19 and `closed-book` until 2026-08-20. `none` named an absence
+# relative to an unstated whole and said nothing about what was being tested; `no-context` names
+# the absence too, but says WHAT is absent, which is the part `none` was missing.
+name: no-context
+kind: in-process
+adapter: no-context
+transport: in-process
+context_budget: none

@@ -1,0 +1,120 @@
+# The PUBLIC repository's own CI. This file SHIPS.
+#
+# WHY IT IS HERE AND NOT ONLY THERE. `ContextCommons/memrank` is a projection of a commit in this
+# repository, produced by `tools/project.py`. Anything the public repo needs that is not in the
+# projection has to be re-applied by hand after every export, and a
+# post-export step nobody is present for is a step that stops happening. So the public workflow is
+# a tracked file here, classified public by an EXACT-PATH rule in `publish.toml`, and it arrives
+# with the tree.
+#
+# WHY IT DOES NOT RUN HERE. `.github/` is internal and every other workflow in it stays internal.
+# This one is public, so it exists in both repositories, and a workflow that exists in two places
+# runs in two places. `if: github.repository == 'ContextCommons/memrank'` is the whole of the
+# targeting: in this repository every job is skipped, deliberately and visibly. It is a target
+# selector, not a fallback mode -- nothing here degrades, it either runs or is not this repo.
+#
+# WHAT IS RED TODAY, AND WHY THAT IS THE POINT. Nothing is suppressed here: no skip-list, no
+# `continue-on-error`, no `|| true`. Each surface has its own job so the red is ATTRIBUTABLE to the
+# ticket that owns it rather than smeared across one opaque failure.
+#
+#   tests      4 failures, all of them already red on `dev` and none of them the projection's
+#              doing: they assert on CliRunner output that arrives empty or as a usage error under
+#              the locked click/typer. UNOWNED -- see `tech-debt.md`. The 64 boundary failures
+#              this job carried until 2026-09-02 are gone: ATO-1831 settled that `mem0` and
+#              `supermemory` stay withheld, and `tests/withheld.py` makes a test that needs one of
+#              those refs skip with the reason stated rather than fail.
+#   lint       22 ruff findings, 40 mypy findings -- ALL pre-existing on `dev` (53 and 75 there;
+#   types      the public subset is smaller only because internal files do not ship). Not caused
+#              by the projection, and not this ticket's to fix.
+#
+# The third, `lockfile`, is GONE -- not suppressed. `uv sync --locked` used to fail because the
+# projector rewrote `pyproject.toml` and copied `uv.lock` verbatim; ATO-1856 made the projection
+# prune the lock from the same table that rewrites the pyproject (`tools/lockfile.py`), so the two
+# agree by construction. The check did not need its own job once it stopped being a known gap: it
+# is `--locked` on every sync step below, which is stricter than one job was -- the lock now has to
+# hold on all three interpreters, not just on 3.12.
+#
+# BRANCH PROTECTION. Only the jobs that are actually green may be required status checks on day
+# one; requiring a known-red check blocks every merge including the ones that would fix it, so
+# the required list is staged as each job goes green.
+
+name: public-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# NOTE ON `uv sync --locked`. `--locked` rather than a plain sync, on every step: the projected
+# tree ships a `uv.lock` pruned to match its own `pyproject.toml`, and an install that resolved
+# fresh would pass whether or not that were still true. This is what makes the published tree
+# reproducible from its own lockfile rather than merely installable.
+
+jobs:
+  # The boundary, checked by the published tree itself. `publish.toml` and `tools/manifest.py`
+  # ship precisely so this can run here rather than being a promise made upstream.
+  boundary:
+    name: boundary
+    runs-on: ubuntu-latest
+    if: github.repository == 'ContextCommons/memrank'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --locked --extra dev
+      - run: uv run pytest -q tests/repo/test_public_boundary.py tests/repo/test_projection.py tests/repo/test_projected_lockfile.py tests/repo/test_internal_document_references.py
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    if: github.repository == 'ContextCommons/memrank'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check .
+
+  types:
+    name: types
+    runs-on: ubuntu-latest
+    if: github.repository == 'ContextCommons/memrank'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --locked --extra dev
+      - run: uv run mypy memrank
+
+  # The versions `pyproject.toml` actually claims: `requires-python = ">=3.10"`, and mypy's
+  # `python_version = "3.10"`. 3.13 is NOT tested and is NOT claimed -- the dependency set has not
+  # been verified there, and a matrix entry is a support claim.
+  tests:
+    name: tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    if: github.repository == 'ContextCommons/memrank'
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # `--python` as well as the action's `python-version`, which only exports `UV_PYTHON`. The
+      # projected tree ships `.python-version` pinning 3.12; the env var already outranks it, but
+      # a matrix that silently ran one interpreter three times is the failure worth two words.
+      - run: uv sync --locked --extra dev --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -q

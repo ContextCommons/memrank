@@ -1,0 +1,20 @@
+# The floor for "dumb memory": retrieval by counting how many words a document shares with the
+# question. A real engine must beat that to be interesting. NOT a no-retrieval control -- that is
+# `no-context`.
+#
+# NAMED FOR THE MECHANISM, at the level the mechanism lives. This was `baseline` until 2026-08-19
+# (a ROLE every control arm occupies, so it carried no information) and `lexical` until 2026-08-20.
+# `lexical` was BEIR's FAMILY label -- the level above `sparse` and `dense` -- where an instance-level
+# name existed: LoCoMo-style baseline sets list "BM25 retrieval" and "Word-overlap retrieval" as two
+# separate arms, and this is the second one.
+#
+# Not `bm25`, which would be false: adapters/word_overlap.py scores `len(query_tokens & doc_tokens)`
+# -- an unweighted set intersection, with no IDF, no term frequency and no length normalisation.
+#
+# `lexical` also collided with the ordinary adjective, which real engines use to describe their
+# own retrieval -- a lexical-and-graph walk is a common shape. One word cannot be both an arm name
+# and a property several engines have.
+name: word-overlap
+kind: in-process
+adapter: word-overlap
+transport: in-process

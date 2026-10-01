@@ -1,0 +1,15 @@
+# The containers `atomicmemory` needs. Plain Compose; see hindsight.compose.yaml for the
+# conventions this file follows.
+#
+# Our own engine, published to ghcr.io. Named by its public reference like any other vendor's:
+# whose engine it is does not change how a target says what it runs.
+services:
+  engine:
+    image: ghcr.io/atomicstrata/atomicmemory-core:latest
+    ports: ["127.0.0.1::17350"]
+    # With DATABASE_URL=embedded (the image's default) the engine runs its own Postgres 17 in this
+    # container, on stock settings: parallel query and parallel maintenance put their working memory
+    # in /dev/shm, which Docker caps at 64 MB -- the limit hindsight's embedded Postgres ran into
+    # on beam:100k (hindsight.compose.yaml says so). Same headroom as hindsight.
+    # Local only: Fargate cannot size /dev/shm (see ecs_compile.LOCAL_ONLY).
+    shm_size: 2g

@@ -1,0 +1,16 @@
+{
+  "unit_id": "demo_alex",
+  "isolation_id": "demo_alex",
+  "documents": [
+    {"id": "sess_1", "content": "Alex: Hi! I just moved to Portland for a new job as a marine biologist. My favorite animal is the blue whale.", "doc_id": "sess_1"},
+    {"id": "sess_2", "content": "Alex: We chatted about the rainy weather. Also my sister Dana is visiting next April. I'm allergic to shellfish, not peanuts.", "doc_id": "sess_2"},
+    {"id": "sess_3", "content": "Alex: For dinner I always order vegetarian sushi. My colleague Sam loves regular sushi but I never eat fish.", "doc_id": "sess_3"}
+  ],
+  "queries": [
+    {"id": "q_job", "text": "What is Alex's profession?", "user_id": "demo_alex", "category": "single-hop", "required_spans": ["marine biologist"], "evidence_doc_ids": ["sess_1"], "gold_answers": ["marine biologist"]},
+    {"id": "q_animal", "text": "What is Alex's favorite animal?", "user_id": "demo_alex", "category": "single-hop", "required_spans": ["blue whale"], "evidence_doc_ids": ["sess_1"], "gold_answers": ["blue whale"]},
+    {"id": "q_visit", "text": "When is Dana visiting?", "user_id": "demo_alex", "category": "temporal", "required_spans": ["april"], "evidence_doc_ids": ["sess_2"], "gold_answers": ["April"]},
+    {"id": "q_diet", "text": "What does Alex order for dinner?", "user_id": "demo_alex", "category": "preference", "required_spans": ["vegetarian sushi"], "forbidden_spans": ["regular sushi"], "evidence_doc_ids": ["sess_3"], "gold_answers": ["vegetarian sushi"]},
+    {"id": "q_allergy_neg", "text": "Is Alex allergic to peanuts?", "user_id": "demo_alex", "category": "abstention", "kind": "negative", "forbidden_spans": ["allergic to peanuts"], "gold_answers": ["No, Alex is allergic to shellfish, not peanuts"]}
+  ]
+}
