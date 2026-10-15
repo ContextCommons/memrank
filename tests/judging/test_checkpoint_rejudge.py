@@ -44,7 +44,7 @@ def _run(tmp_path, *, judge_workers=1, checkpoint_path=None):
     """One judged cell against fakes -- no network, no engine."""
     bench = JudgeFakeBenchmark()
     adapter = FakeAdapter("fake", {q["text"]: [DOC] for q in bench.load()[0].queries})
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
     return runner.run_cell(
         adapter, bench, k=5, repeats=1, run_id_prefix="t", model="gpt-4o-mini",
         token_budget=5000, judge=cfg, judge_workers=judge_workers,
@@ -63,7 +63,7 @@ def test_judging_from_the_checkpoint_reproduces_the_run(tmp_path):
     bench = JudgeFakeBenchmark()
     resumed = runner._apply_judge(
         bench.load(), cell["per_query"],
-        JudgeConfig(no_context_control=False, completer=make_fake_completer()),
+        JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer()),
         make_fake_completer(), budget_mode, shape=bench.judge_shape())
 
     assert resumed == uninterrupted["judged_metrics"]
@@ -170,7 +170,7 @@ def test_the_budget_mode_survives(tmp_path):
     path = tmp_path / checkpoint.CHECKPOINT_FILE
     runner.run_cell(adapter, bench, k=5, repeats=1, run_id_prefix="t", model="gpt-4o-mini",
                     token_budget=5000,
-                    judge=JudgeConfig(no_context_control=False, completer=make_fake_completer()),
+                    judge=JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer()),
                     checkpoint_path=path).to_dict()
 
     _, budget_mode = checkpoint.read(path)

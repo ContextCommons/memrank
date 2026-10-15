@@ -179,7 +179,13 @@ def _git_sha() -> str | None:
 #      cleaned file's records wrong. A version-6 LongMemEval record cannot say which artifact it
 #      scored. Its slices also differ -- version-6 smoke/mini were `raw[:N]` over a type-grouped
 #      file, so both covered one of six question types and no abstention item.
-CONFIG_HASH_VERSION = 7
+#   8  (2026-10-15) Judged configs record who the reader and the judge are as providers:
+#      ``config.judge``/``reader`` (the ``provider:model`` spec), ``*_provider``, ``*_model``,
+#      ``*_endpoint`` (a fingerprint, never a URL) and ``*_settings`` (the adapter, the output
+#      budget and the field it was sent under, and the sampling actually sent)
+#      (memrank/judging/record.py). A version-7 judged record names a bare Claude model and cannot
+#      say which provider served it.
+CONFIG_HASH_VERSION = 8
 
 def _sanitize_value(value: Any) -> Any:
     """Recurse into nested dicts AND lists/tuples so secrets can't hide inside a

@@ -107,3 +107,15 @@ def test_run_judge_needs_no_second_flag_for_real_data(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     result = runner.invoke(app, ["submit", "word-overlap", "locomo:smoke", "--judge", "--on", "none"])
     assert "egress" not in result.output.lower() or "sends retrieved content" in result.output
+
+
+def test_run_names_its_judge_as_provider_model_and_the_old_flag_is_gone():
+    """`--judge-model` broke with no alias (ATO-2503): the judge is one provider:model spec."""
+    result = runner.invoke(app, ["run", "--help"], terminal_width=200)
+    assert result.exit_code == 0
+    assert "--judge" in result.output and "SPEC" in result.output
+    assert "anthropic:claude-haiku-4-5" in result.output  # the default, shown
+    assert "--judge-model" not in result.output
+    refused = runner.invoke(app, ["run", "locomo", "--agent", "full-context",
+                                  "--judge-model", "claude-haiku-4-5"])
+    assert refused.exit_code != 0

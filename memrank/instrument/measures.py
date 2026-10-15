@@ -216,7 +216,7 @@ class Judge(Measure):
 
     def measure(self, traces: Sequence[Trace], values: Sequence[Value]) -> list[Value]:
         from memrank.judging.client import build_completer
-        from memrank.judging.judge import judge_answer
+        from memrank.judging.judge import JUDGE, judge_answer
 
         complete, _ = build_completer(self.config)
         produced = []
@@ -229,7 +229,7 @@ class Judge(Measure):
                 continue
             verdict = judge_answer(
                 complete, question=trace.task.prompt, answer=trace.answered.text, gold=gold,
-                model=self.config.judge_model, samples=self.config.samples,
+                model=JUDGE, samples=self.config.samples,
                 negative=trace.task.expected.polarity == "negative")
             produced.append(Value(
                 measure=self.name, decider=self.decider, task_id=trace.task_id,

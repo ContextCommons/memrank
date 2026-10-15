@@ -78,7 +78,7 @@ def _headline(result: RunResult) -> str:
         return (f"<p class=warn>{escape(result.notice or '')}</p><p>The table below lists every "
                 "answer; none of them was graded, so this run says nothing about quality.</p>")
     return (f"<h2>How often the agent was right</h2><p class=big>{_pct(result.score.mean)}</p>"
-            f"<p>{_interval(result.score)}. Judged by {escape(result.identity.judge_model or '')}"
+            f"<p>{_interval(result.score)}. Judged by {escape(result.identity.judge_label() or '')}"
             f"; {result.unjudged} answers the judge could not grade are left out.</p>")
 
 
@@ -113,7 +113,7 @@ def _identity(result: RunResult) -> str:
                        f"{who.questions_per_case or 'all'} questions each: "
                        f"{', '.join(who.case_ids)}"),
             ("Agent file", f"{agent.spec_path} (sha256 {agent.spec_sha256})"),
-            ("Judge", who.judge_model or "off"))
+            ("Judge", who.judge_label() or "off"))
     body = "".join(f"<tr><th>{k}</th><td>{escape(str(v))}</td></tr>" for k, v in rows)
     return f"<h2>What was run</h2><table>{body}</table>"
 

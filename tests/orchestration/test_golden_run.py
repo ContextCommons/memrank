@@ -106,7 +106,7 @@ def test_a_judged_cell_appends_judged_metrics_last():
     bench = JudgeFakeBenchmark()
     docs = {q["text"]: [] for q in bench.load()[0].queries}
     adapter = FakeAdapter("fake", docs)
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
 
     result = run_cell(adapter, bench, k=5, repeats=1, run_id_prefix="g",
                       model="gpt-4o-mini", token_budget=5000, judge=cfg).to_dict()

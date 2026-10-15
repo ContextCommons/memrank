@@ -48,7 +48,7 @@ def _unjudged():
 def _judged():
     bench = JudgeFakeBenchmark()
     docs = {q["text"]: [] for q in bench.load()[0].queries}
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
     return run_cell(FakeAdapter("fake", docs), bench, k=5, repeats=1, run_id_prefix="c",
                     model="gpt-4o-mini", token_budget=5000, judge=cfg)
 

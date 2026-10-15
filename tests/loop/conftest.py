@@ -11,6 +11,8 @@ import json
 
 import httpx
 
+from memrank.judging.providers import resolve
+from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.upload import Account, Hosted
 from memrank.service.protocol import RunResult
 from tests.service.conftest import client, engine, judge  # noqa: F401 - pytest fixtures
@@ -52,9 +54,11 @@ class OrgApi:
         return httpx.Response(200, json={"url": PAGE.format(run_id=run_id),
                                          "progress": channel if running else None})
 
-    def hosted(self, judge_key: str | None = "org-key") -> Hosted:
+    def hosted(self, judge_key: str | None = "org-key", spec: str = DEFAULT_JUDGE) -> Hosted:
+        """The org, holding ``judge_key`` for ``spec`` (a built-in judge) as `connect` would."""
         http = httpx.Client(base_url="http://api", transport=httpx.MockTransport(self.handle))
-        return Hosted(http=http, org="acme", account=ACCOUNT, judge_key=judge_key)
+        return Hosted(http=http, org="acme", account=ACCOUNT, judge_key=judge_key,
+                      judge=resolve(spec) if judge_key is not None else None)
 
     @property
     def states(self) -> list[str]:

@@ -34,7 +34,7 @@ from collections import defaultdict
 from typing import Any
 
 from memrank.instrument.statistics import bootstrap_ci
-from memrank.service.protocol import Interval, QuestionOutcome, RunResult
+from memrank.service.protocol import Interval, JudgeIdentity, QuestionOutcome, RunResult
 
 NOT_JUDGED = ("NOT JUDGED: this run was created with judging off. It records answers, failures "
               "and latency; it has no quality score.")
@@ -76,19 +76,19 @@ def _graded(question: QuestionOutcome, verdict: dict[str, Any] | None) -> Questi
     return question.model_copy(update={
         "status": verdict["status"], "score": verdict.get("score"),
         "passed": verdict.get("passed"), "rationale": verdict.get("rationale"),
-        "error": verdict.get("error")})
+        "error": verdict.get("error"), "probability": verdict.get("probability")})
 
 
 def apply_verdicts(result: RunResult, verdicts: dict[str, dict[str, Any]], *,
-                   judge_model: str | None, judge_samples: int,
+                   judge: JudgeIdentity | None, judge_samples: int,
                    judge_prompt_version: str | None = None) -> RunResult:
     """The judged result: each answer's verdict applied, failures scored 0, scores recomputed.
 
     Args:
         result: The run as the runner recorded it, every answer ``not_judged``.
-        verdicts: ``{question_id: {"status", "score", "passed", "rationale", "error"}}`` for
-            every answered question.
-        judge_model: The model that judged, recorded in the result's identity; None when no
+        verdicts: ``{question_id: {"status", "score", "passed", "rationale", "error",
+            "probability"}}`` for every answered question.
+        judge: The judge that graded, recorded in the result's identity; None when no
             answer needed one (every grader was deterministic or a program).
         judge_samples: How many gradings each verdict is a vote over.
         judge_prompt_version: The judge prompts' version when the model judged, else None.
@@ -96,9 +96,10 @@ def apply_verdicts(result: RunResult, verdicts: dict[str, dict[str, Any]], *,
     cases = [case.model_copy(update={"questions": [_graded(q, verdicts.get(q.question_id))
                                                    for q in case.questions]})
              for case in result.cases]
+    named = (judge.model_dump() if judge is not None
+             else dict.fromkeys(JudgeIdentity.model_fields))
     identity = result.identity.model_copy(update={
-        "judge_model": judge_model, "judge_samples": judge_samples,
-        "judge_prompt_version": judge_prompt_version})
+        **named, "judge_samples": judge_samples, "judge_prompt_version": judge_prompt_version})
     judged = result.model_copy(update={"cases": cases, "identity": identity, "judged": True,
                                        "notice": None})
     return summarize(judged)

@@ -13,9 +13,10 @@
 # permissions and limitations under the License.
 """Judging a finished run in the runner's own process, with the organisation's key.
 
-Decision 0037: ``memrank run`` judges the way ``submit`` does -- the same Anthropic completer
-(cached, counted, rate-limit gated), keyed by the organisation's saved ``ANTHROPIC_API_KEY`` --
-and the verdicts then travel in the run's own record. Each answer is graded by its evaluation's
+Decision 0037: ``memrank run`` judges the way ``submit`` does -- the same provider-backed completer
+(cached, counted, rate-limit gated), keyed by the organisation's saved key for the judge it names
+(``ANTHROPIC_API_KEY`` for ``anthropic:``, an endpoint's ``key_ref`` for ``<endpoint>:``) -- and
+the verdicts then travel in the run's own record. Each answer is graded by its evaluation's
 own grader (:meth:`~memrank.definitions.base.Definition.grader_for`): a shipped benchmark's
 judge shape, or an evaluation file's built-in or command grader. Only a grader that calls the
 judge model needs the key, so an evaluation graded without one runs without one. The judge
@@ -26,20 +27,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 
 from memrank.definitions import resolve
 from memrank.definitions.base import Definition, ModelJudge, Verdict
 from memrank.evaluation.constants import DEFAULT_JUDGE_WORKERS
-from memrank.judging.client import anthropic_completer, build_completer
-from memrank.judging.judge import JudgeConfig
+from memrank.judging.client import build_completer
+from memrank.judging.judge import JUDGE, JudgeConfig
 from memrank.judging.prompts import JUDGE_PROMPT_VERSION
-from memrank.service.protocol import QuestionOutcome, RunResult
+from memrank.judging.providers import resolve as resolve_judge
+from memrank.judging.record import role_record
+from memrank.service.protocol import JudgeIdentity, QuestionOutcome, RunResult
 from memrank.service.scoring import apply_verdicts
 
 #: The judge ``memrank run`` uses unless told otherwise: Haiku, the cheap one (ATO-2343). Every
-#: result names the model that judged it, so a score is never read without knowing whose it is.
-DEFAULT_JUDGE_MODEL = "claude-haiku-4-5"
+#: result names the judge, so a score is never read without knowing whose it is.
+DEFAULT_JUDGE = "anthropic:claude-haiku-4-5"
 
 
 def definition_of(result: RunResult) -> Definition:
@@ -55,12 +57,23 @@ def needs_key(result: RunResult) -> bool:
 
 
 def _model(cfg: JudgeConfig, api_key: str | None) -> ModelJudge:
+    keys: dict[str, str] = {}
     if cfg.completer is None:
         if api_key is None:
             raise ValueError("a grader needs the judge model and no key was given")
-        cfg = replace(cfg, completer=anthropic_completer(cfg, api_key=api_key))
-    complete, _ = build_completer(cfg)
+        # The key is the one the judge names: its provider's, or its endpoint's key_ref.
+        keys[resolve_judge(cfg.judge, cfg.endpoints).key_name] = api_key
+    complete, _ = build_completer(cfg, keys=keys)
     return ModelJudge(complete=complete, cfg=cfg)
+
+
+def _identity(model: ModelJudge) -> JudgeIdentity:
+    """The judge ``model`` is, as the record names it: the spec, what it resolved to, and the
+    settings sent (:func:`memrank.judging.record.role_record`)."""
+    record = role_record(model.cfg, JUDGE)
+    return JudgeIdentity(judge=record["spec"], judge_provider=record["provider"],
+                         judge_model=record["model"], judge_endpoint=record["endpoint"],
+                         judge_settings=record["settings"])
 
 
 def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None,
@@ -70,13 +83,14 @@ def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None
 
     Args:
         result: The run as recorded, every answer ``not_judged``.
-        api_key: The organisation's Anthropic key; None when no grader calls the model.
-        cfg: The judge configuration, :data:`DEFAULT_JUDGE_MODEL` when none is given; a
-            ``completer`` on it replaces Anthropic (tests).
+        api_key: The organisation's key for the judge ``cfg`` names; None when no grader calls
+            the model, or a ``completer`` judges.
+        cfg: The judge configuration, :data:`DEFAULT_JUDGE` when none is given; a
+            ``completer`` on it (with its ``completer_name``) replaces the providers.
         workers: How many answers are judged at once -- the old path's judge-worker default.
         judged: Called once per answer as its verdict lands, from whichever worker judged it.
     """
-    cfg = cfg or JudgeConfig(judge_model=DEFAULT_JUDGE_MODEL)
+    cfg = cfg or JudgeConfig(judge=DEFAULT_JUDGE)
     definition = definition_of(result)
     answered = [q for case in result.cases for q in case.questions if q.status == "not_judged"]
     graders = [definition.grader_for(q) for q in answered]
@@ -94,6 +108,6 @@ def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None
         verdicts = list(pool.map(one, [(q, i) for i, q in enumerate(answered)]))
     by_question = {q.question_id: v for q, v in zip(answered, verdicts, strict=True)}
     return apply_verdicts(result, by_question,
-                          judge_model=model.cfg.judge_model if model else None,
+                          judge=_identity(model) if model else None,
                           judge_samples=model.cfg.samples if model else 0,
                           judge_prompt_version=JUDGE_PROMPT_VERSION if model else None)

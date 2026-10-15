@@ -25,14 +25,14 @@ def test_no_session_is_refused_with_the_login_command(monkeypatch):
 
     monkeypatch.setattr(run_api_client, "authenticated_client", no_session)
     with pytest.raises(up.LoginRequired, match="(?s)needs a login.*memrank auth login"):
-        up.connect(judge=False)
+        up.connect(judge=None)
 
 
 def test_no_organisation_is_refused(monkeypatch):
     monkeypatch.setattr(run_api_client, "authenticated_client", lambda: object())
     monkeypatch.setattr(up.settings, "get", lambda key: None)
     with pytest.raises(up.LoginRequired, match="No organisation"):
-        up.connect(judge=False)
+        up.connect(judge=None)
 
 
 def api(secrets: dict[str, str] | int = 200,
@@ -71,14 +71,24 @@ def signed_in(monkeypatch):
     return with_api
 
 
+HAIKU = "anthropic:claude-haiku-4-5"
+
+
+def accepting(target, key, models_listing) -> None:
+    """The model check, answered: every key reaches every model."""
+    return None
+
+
 @pytest.mark.parametrize(("secrets", "judge", "key"), [
-    ({"ANTHROPIC_API_KEY": "org-key"}, True, "org-key"),
-    ({}, False, None),
+    ({"ANTHROPIC_API_KEY": "org-key"}, HAIKU, "org-key"),
+    ({}, None, None),
 ], ids=["judged-takes-the-orgs-key", "no-judge-reads-no-secret"])
 def test_connect_takes_the_judge_key_from_the_orgs_saved_secrets(signed_in, secrets, judge, key):
     calls = signed_in(secrets)
-    assert up.connect(judge=judge).judge_key == key
-    assert ("GET /orgs/acme/secrets/resolved" in calls) is judge
+    hosted = up.connect(judge=judge, check=accepting)
+    assert hosted.judge_key == key
+    assert (hosted.judge is None) is (judge is None)
+    assert ("GET /orgs/acme/secrets/resolved" in calls) is (judge is not None)
 
 
 @pytest.mark.parametrize(("secrets", "refusal", "message"), [
@@ -89,13 +99,13 @@ def test_connect_takes_the_judge_key_from_the_orgs_saved_secrets(signed_in, secr
 def test_a_judged_run_is_refused_before_it_starts(signed_in, secrets, refusal, message):
     signed_in(secrets)
     with pytest.raises(refusal, match=message):
-        up.connect(judge=True)
+        up.connect(judge=HAIKU, check=accepting)
 
 
 def test_a_failing_secrets_api_is_an_error_not_a_step(signed_in):
     signed_in(503)
     with pytest.raises(OrgSecretsError) as raised:
-        up.connect(judge=True)
+        up.connect(judge=HAIKU, check=accepting)
     assert not isinstance(raised.value, ActionRequired)
 
 

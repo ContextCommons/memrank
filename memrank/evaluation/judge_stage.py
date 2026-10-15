@@ -26,11 +26,13 @@ from memrank.evaluation.constants import DEFAULT_JUDGE_WORKERS
 from memrank.evaluation.observer import NULL_OBSERVER, EvalObserver
 from memrank.judging.judge import (
     MAX_VERDICT_ATTEMPTS,
+    READER,
     JudgeConfig,
     JudgedQuery,
     UnparseableVerdict,
 )
 from memrank.judging.prompts import JUDGE_PROMPT_VERSION
+from memrank.judging.record import receipt_fields
 from memrank.judging.shape import GENERIC_BINARY_CATEGORIES, BinaryJudgeShape, JudgeShape
 from memrank.metrics import cost
 
@@ -79,14 +81,29 @@ def assert_judge_coverage(units, judge: JudgeConfig | None, benchmark_name: str,
 def _judge_receipt_config(judge: JudgeConfig | None) -> dict[str, Any]:
     if judge is None:
         return {}
-    return {"judge_enabled": True, "answer_model": judge.answer_model,
+    # `answer_model` stays beside `reader_model` because the leaderboard and Arena read it, and
+    # that deprecated surface stays Anthropic-only (board_key is not widened).
+    return {"judge_enabled": True, **receipt_fields(judge),
+            "answer_model": judge.model(READER),
             "answer_temperature": judge.answer_temperature,
-            "judge_model": judge.judge_model, "judge_prompt_version": JUDGE_PROMPT_VERSION,
+            "judge_prompt_version": JUDGE_PROMPT_VERSION,
             "judge_samples": judge.samples, "judge_token_budget": judge.token_budget,
             "judge_no_context_control": judge.no_context_control,
             "judge_cache_enabled": judge.cache,
             "judge_allow_empty_coverage": judge.allow_empty_coverage,
             **judge.answer_prompt.provenance()}
+
+
+def _recorded_spec(config: dict[str, Any], key: str, legacy_key: str, default: str) -> str:
+    """The spec a checkpoint recorded under ``key``, or its pre-provider bare model.
+
+    A receipt from before providers names a bare model under ``legacy_key``; the engine path that
+    wrote it judged only through Anthropic, so that is the provider it is resumed with.
+    """
+    if config.get(key):
+        return str(config[key])
+    legacy = config.get(legacy_key)
+    return f"anthropic:{legacy}" if legacy else default
 
 
 def _judge_cfg_from_receipt(cell: dict[str, Any]) -> JudgeConfig:
@@ -108,9 +125,9 @@ def _judge_cfg_from_receipt(cell: dict[str, Any]) -> JudgeConfig:
             f"the checkpoint was retrieved under judge prompt {recorded!r} and this build grades "
             f"with {JUDGE_PROMPT_VERSION!r}. Resuming would mix two grading regimes in one score.")
     return JudgeConfig(
-        answer_model=config.get("answer_model", JudgeConfig.answer_model),
+        reader=_recorded_spec(config, "reader", "answer_model", JudgeConfig.reader),
         answer_temperature=config.get("answer_temperature", JudgeConfig.answer_temperature),
-        judge_model=config.get("judge_model", JudgeConfig.judge_model),
+        judge=_recorded_spec(config, "judge", "judge_model", JudgeConfig.judge),
         samples=config.get("judge_samples", 1),
         token_budget=config.get("judge_token_budget", 5000),
         no_context_control=config.get("judge_no_context_control", True),
@@ -265,7 +282,7 @@ def _apply_judge(units, per_query, cfg: JudgeConfig, complete,
             suff.append(jq.sufficiency.passed)
     if n_unparseable and not n_judged:
         raise AllVerdictsUnparseable(
-            f"the judge ({cfg.judge_model}) returned no parseable verdict for any of the "
+            f"the judge ({cfg.judge}) returned no parseable verdict for any of the "
             f"{n_unparseable} gradeable queries, after {MAX_VERDICT_ATTEMPTS} attempts each -- "
             "every one of them billed. A judged run with nothing judged is not a result. Check "
             "that this model returns the verdict JSON this build parses (bare, or inside a "

@@ -1,7 +1,12 @@
-"""A stand-in for Anthropic's Messages API, for a local stack with no funded key.
+"""A stand-in judge for a local stack with no funded key: Anthropic's Messages API, and Chat Completions.
 
-Not memrank code and never shipped: ``memrank run`` calls it exactly as it would call Anthropic
-(the SDK's ``ANTHROPIC_BASE_URL`` points there), so everything but the provider is real. It grades a judge prompt deterministically -- passed when the reference answer's text
+Not memrank code and never shipped. It is registered on the local API's organisation as an
+endpoint -- ``memrank endpoints add stub --adapter anthropic --base-url http://127.0.0.1:8199``
+for the Messages API (``POST /v1/messages``), or ``--adapter openai --base-url
+http://127.0.0.1:8199/v1`` for Chat Completions (``POST /v1/chat/completions``) -- and a run
+names it, ``--judge stub:claude-haiku-4-5``, so everything but the provider is real and the record
+says the stub judged. Both adapters' models listing (``GET /v1/models``) lists :data:`MODELS`.
+It grades a judge prompt deterministically -- passed when the reference answer's text
 appears in the candidate answer -- and says in every rationale that it is a stub. BEAM's rubric
 prompts get a score on its {0, 0.5, 1} scale from how many of a criterion's words the response
 uses; its event prompts get the response's lines as events, and two events match when one
@@ -66,16 +71,43 @@ def verdict(prompt: str) -> dict:
             "rationale": f"stub judge: reference {'found' if passed else 'not found'} in answer"}
 
 
+#: The models both listings answer with: the ones a local witness judges with, the router-shaped
+#: id included, so a witness names a model the way a run through the company router does.
+MODELS = ("claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8", "bedrock/claude-haiku-4-5")
+
+
+def _message(model: str, text: str) -> dict:
+    return {"id": "msg_stub", "type": "message", "role": "assistant", "model": model,
+            "stop_reason": "end_turn", "stop_sequence": None,
+            "content": [{"type": "text", "text": text}],
+            "usage": {"input_tokens": 0, "output_tokens": 0}}
+
+
+def _chat_completion(model: str, text: str) -> dict:
+    return {"id": "chatcmpl-stub", "object": "chat.completion", "created": 0, "model": model,
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": text}}]}
+
+
 class Messages(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - the stdlib's name
+        if not self.path.rstrip("/").endswith("/models"):
+            self._send(404, {"error": {"message": f"no route {self.path}"}})
+            return
+        self._send(200, {"data": [{"id": model, "type": "model"} for model in MODELS]})
+
     def do_POST(self) -> None:  # noqa: N802 - the stdlib's name
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        prompt = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
-        reply = {"id": "msg_stub", "type": "message", "role": "assistant",
-                 "model": body.get("model"), "stop_reason": "end_turn", "stop_sequence": None,
-                 "content": [{"type": "text", "text": json.dumps(verdict(prompt))}],
-                 "usage": {"input_tokens": 0, "output_tokens": 0}}
+        prompt = "\n".join(str(m.get("content", "")) for m in body.get("messages", [])
+                           if m.get("role") != "system")
+        text = json.dumps(verdict(prompt))
+        chat = self.path.rstrip("/").endswith("/chat/completions")
+        self._send(200, _chat_completion(body.get("model"), text) if chat
+                   else _message(body.get("model"), text))
+
+    def _send(self, status: int, reply: dict) -> None:
         data = json.dumps(reply).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

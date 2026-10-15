@@ -87,7 +87,7 @@ def comparable(result: RunResult) -> dict:
 
 def test_two_lanes_run_both_cases_at_once_and_each_case_in_order(engine, tmp_path, org):
     agent = Memory(together=2)
-    options = RunOptions(evaluation="locomo", judge=False, concurrency=2)
+    options = RunOptions(evaluation="locomo", judge=None, concurrency=2)
     run_agent(engine, spec(agent), options, tmp_path, org.hosted(None), quiet([]))
     assert agent.ops["c1"] == ["reset", "feed", "ask", "ask"]
     assert agent.ops["c2"] == ["reset", "feed", "ask"]
@@ -95,10 +95,10 @@ def test_two_lanes_run_both_cases_at_once_and_each_case_in_order(engine, tmp_pat
 
 @pytest.mark.parametrize("concurrency", [2, 4])
 def test_the_result_does_not_depend_on_how_many_lanes_ran(engine, tmp_path, org, concurrency):
-    one = run_agent(engine, spec(Memory()), RunOptions(evaluation="locomo", judge=False),
+    one = run_agent(engine, spec(Memory()), RunOptions(evaluation="locomo", judge=None),
                     tmp_path / "one", org.hosted(None), quiet([]))
     many = run_agent(engine, spec(Memory(together=2)),
-                     RunOptions(evaluation="locomo", judge=False, concurrency=concurrency),
+                     RunOptions(evaluation="locomo", judge=None, concurrency=concurrency),
                      tmp_path / "many", org.hosted(None), quiet([]))
     assert comparable(many.result) == comparable(one.result)
 
@@ -106,7 +106,7 @@ def test_the_result_does_not_depend_on_how_many_lanes_ran(engine, tmp_path, org,
 def test_an_unreachable_agent_in_one_lane_stops_every_lane_and_the_run_online(engine, tmp_path,
                                                                              org):
     agent, echoed = Memory(together=2, down_on="c2"), []
-    options = RunOptions(evaluation="locomo", judge=False, concurrency=2)
+    options = RunOptions(evaluation="locomo", judge=None, concurrency=2)
     with pytest.raises(RunAborted, match="memrank run --resume"):
         run_agent(engine, spec(agent), options, tmp_path, org.hosted(None), quiet(echoed))
     assert org.states == ["running", "stopped"]

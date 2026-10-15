@@ -31,8 +31,9 @@ from memrank.connect.process import AgentStartFailed
 from memrank.connect.spec import AgentSpec
 from memrank.definitions.commands import CommandFailed
 from memrank.errors import ActionRequired, MemrankError
+from memrank.judging.providers import provider_label, reach_label
 from memrank.loop.explain import NO_CREDIT_REASON as _NO_CREDIT
-from memrank.loop.explain import JudgeFailed, account
+from memrank.loop.explain import JudgeFailed, account, capitalized
 from memrank.loop.report import achieved, failures
 from memrank.loop.run import ProbeIncomplete, RunAborted, UploadIncomplete
 from memrank.loop.trace import RunTrace
@@ -110,30 +111,35 @@ def _lead_and_rest(exc: BaseException) -> tuple[str, tuple[str, ...]]:
 
 
 def _judge_steps(end: _Ending, exc: JudgeFailed, org: str) -> tuple[str, tuple[Step, ...]]:
-    """What happened when Anthropic would not judge, and the steps before judging again."""
-    save = (f"memrank secrets set ANTHROPIC_API_KEY --org {org}",)
+    """What happened when the judge's provider would not judge, and the steps before judging
+    again -- naming the provider as the spec did, and the key by name."""
+    target = exc.target
+    who = provider_label(target.provider)
+    key = f"{org}'s {target.key_name}"
+    save = (f"memrank secrets set {target.key_name} --org {org}",)
     if exc.status is None:
-        return ("memrank could not get a verdict from Anthropic: no answer came back. The "
+        return (f"memrank could not get a verdict from {who}: no answer came back. The "
                 "details below say what went wrong on the way.",
-                (Step("Check that this machine can reach Anthropic (api.anthropic.com)."),))
+                (Step(f"Check that this machine can reach {reach_label(target)}."),))
     if exc.reason == _NO_CREDIT:
-        return (f"Anthropic refused to judge the answers: the account behind {org}'s key has "
-                "no credit left.",
-                (Step("Add credit to that Anthropic account, or save a different key:", save),))
+        return (f"{capitalized(who)} refused to judge the answers: the account behind {key} "
+                "has no credit left.",
+                (Step("Add credit to that account, or save a different key:", save),))
     if exc.status == 429:
-        return ("Anthropic kept refusing with rate limits, even after memrank waited, so "
-                "judging gave up.", (Step("Wait a few minutes, or raise the account's rate "
-                                          "limit."),))
-    return (f"Anthropic refused to judge the answers with {org}'s key: {exc.reason}.",
-            (Step("Check that key's Anthropic account (its key, permissions and limits), or "
-                  "save a different key:", save),))
+        return (f"{capitalized(who)} kept refusing with rate limits, even after memrank waited, "
+                "so judging gave up.", (Step("Wait a few minutes, or raise the account's rate "
+                                             "limit."),))
+    return (f"{capitalized(who)} refused to judge the answers with {key}: {exc.reason}.",
+            (Step("Check that key's account (its key, permissions and limits), or save a "
+                  "different key:", save),))
 
 
 def _judge(end: _Ending, exc: JudgeFailed) -> Outcome:
     happened, steps = _judge_steps(end, exc, end.call.org or "your organisation")
     return end.outcome(Kind.ACTION, "Judging couldn't run", happened=happened,
                        steps=(*steps, end.again("Then judge the saved answers:")),
-                       details=Details("Anthropic", exc.details))
+                       details=Details(capitalized(provider_label(exc.target.provider)),
+                                       exc.details))
 
 
 def _agent_check(end: _Ending, exc: AgentError, agent: AgentSpec) -> Outcome:

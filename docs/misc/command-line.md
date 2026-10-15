@@ -45,12 +45,13 @@ run 20260826-213813__demo__7becda  (word-overlap × demo)
 track: memrank watch 20260826-213813__demo__7becda
 
 $ memrank runs ls
-ID                             TARGET        EVAL  PLACE  STATE  SYNCED   AGE  DONE  SCORE
-20260826-213813__demo__7becda  word-overlap  demo  local  done   pending   8s  100%  0.8000
+ID                             TARGET        EVAL  PLACE  STATE  SYNCED   AGE  DONE  SCORE   JUDGE
+20260826-213813__demo__7becda  word-overlap  demo  local  done   pending   8s  100%  0.8000  not judged
 ```
 
 `submit` always returns immediately with the run id(s); `watch <id>` blocks on them (its exit code
 is the outcome: 0 all done, 1 any failed, 2 still going at timeout), `runs ls` lists them,
+the JUDGE column names who graded each score (`not judged` for a score no judge produced),
 `runs show <id>` gives the full record -- state, where it ran, exit code, artifact location -- and
 `kill <id>` stops one.
 

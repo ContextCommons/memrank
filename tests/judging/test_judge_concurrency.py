@@ -33,7 +33,7 @@ import pytest
 
 from memrank import rate_limit, runner
 from memrank.judging import client
-from memrank.judging.judge import JudgeConfig
+from memrank.judging.judge import JUDGE, JudgeConfig
 from tests.fakes import JudgeFakeBenchmark, make_fake_completer
 
 WORKER_COUNTS = (1, 2, 4, 8)
@@ -257,8 +257,8 @@ def test_the_gate_sits_inside_the_cap(monkeypatch):
         return "graded"
 
     complete, counter = client.build_completer(
-        JudgeConfig(completer=base, cache=False), gate=lambda: gate)
-    assert complete("m", "s", "u") == "graded"
+        JudgeConfig(completer_name="fake", completer=base, cache=False), gate=lambda: gate)
+    assert complete(JUDGE, "s", "u") == "graded"
     assert len(attempts) == 3, "the gate did not absorb the retries"
     assert counter() == 1, "429 retries were counted as spend"
 

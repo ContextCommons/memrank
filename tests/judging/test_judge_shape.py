@@ -95,7 +95,7 @@ def test_apply_judge_scores_from_the_shape():
     """The metric must come from whatever the shape returned, not from `correctness.passed`."""
     units = JudgeFakeBenchmark().load()
     rows = [{"query_id": q["id"], "retrieved": []} for u in units for q in u.queries]
-    metrics = _apply_judge(units, rows, JudgeConfig(completer=make_fake_completer(), cache=False),
+    metrics = _apply_judge(units, rows, JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False),
                            make_fake_completer(), "matched", shape=_ThreeCallShape())
     assert metrics["answer_correctness"] == 0.25, "the shape's score, not a boolean"
     assert metrics["n_judged"] == 2
@@ -139,7 +139,7 @@ def test_judged_metrics_break_out_per_category():
     units = JudgeFakeBenchmark().load()
     rows = [{"query_id": q["id"], "retrieved": []} for u in units for q in u.queries]
     fake = make_fake_completer()
-    metrics = _apply_judge(units, rows, JudgeConfig(completer=fake, cache=False), fake,
+    metrics = _apply_judge(units, rows, JudgeConfig(completer_name="fake", completer=fake, cache=False), fake,
                            "matched", shape=BinaryJudgeShape(GENERIC_BINARY_CATEGORIES))
 
     per_cat = metrics["answer_correctness_per_category"]

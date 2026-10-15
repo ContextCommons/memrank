@@ -49,7 +49,7 @@ def _require_mlflow() -> Any:
     """Return the ``mlflow`` module, or raise loudly if the optional extra is not installed.
 
     Single chokepoint for the lazy import so every mirroring path fails with the same actionable
-    message instead of a bare ``ImportError`` -- mirrors ``judge_client.anthropic_completer``.
+    message instead of a bare ``ImportError`` -- mirrors ``memrank.judging.providers.anthropic``.
     """
     from memrank.errors import optional_import
 

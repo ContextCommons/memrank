@@ -38,7 +38,7 @@ from typing import Any
 from memrank.definitions import commands
 from memrank.definitions.base import Grader, ModelJudge, Verdict
 from memrank.definitions.schema import DEFAULT_TIMEOUT_S, GraderSpec
-from memrank.judging.judge import UnparseableVerdict, judge_answer
+from memrank.judging.judge import JUDGE, UnparseableVerdict, judge_answer
 from memrank.judging.shape import NuggetJudgeShape
 from memrank.outcome import Step
 from memrank.service.grading import verdict_for
@@ -133,7 +133,7 @@ class Judge(Grader):
         try:
             verdict = judge_answer(model.complete, question=question.question,
                                    answer=question.answer or "", gold=gold,
-                                   model=model.cfg.judge_model, samples=model.cfg.samples)
+                                   model=JUDGE, samples=model.cfg.samples)
         except UnparseableVerdict as exc:
             return {"status": "unjudged", "error": str(exc)}
         return _verdict(1.0 if verdict.passed else 0.0, verdict.rationale)

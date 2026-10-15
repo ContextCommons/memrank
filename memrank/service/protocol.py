@@ -27,7 +27,7 @@ without installing the service. Six calls make up the whole protocol:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -211,6 +211,9 @@ class QuestionOutcome(BaseModel):
     score: float | None = None
     passed: bool | None = None
     rationale: str | None = None
+    #: The grader's probability that the answer is correct, when it gives one (a Jev verdict);
+    #: None for a text judge, whose verdict is its rationale.
+    probability: float | None = None
 
 
 class CaseOutcome(BaseModel):
@@ -219,6 +222,83 @@ class CaseOutcome(BaseModel):
     error: str | None = None
     restarts: int = 0
     questions: list[QuestionOutcome]
+
+
+#: How a record's judge fields were filled: by the client that judged (``run``), or afterwards
+#: -- attributed from the router translator's log, or by model alone with no provider claimed.
+JudgeSource = Literal["run", "backfill:translator-log", "backfill:unverified"]
+
+#: The provider a record names when nothing recorded which provider judged. A record may say
+#: it; a run may not ask for it (``unknown`` is a reserved provider name).
+UNKNOWN_PROVIDER = "unknown"
+
+
+class JudgeIdentity(BaseModel):
+    """Who judged: the judge as typed, what it resolved to, and how that is known.
+
+    ``judge`` is ``provider:model`` -- ``anthropic:claude-haiku-4-5``,
+    ``router:bedrock/claude-haiku-4-5`` -- or ``unknown:<model>`` on a record whose provider
+    was never recorded, where ``judge_provider`` is None. ``judge_endpoint`` is a named
+    endpoint's fingerprint (``<id>@<revision>``, ``local:<name>``), never its URL.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    judge: str = Field(min_length=3)
+    judge_provider: str | None
+    judge_model: str = Field(min_length=1)
+    judge_endpoint: str | None = None
+    #: What was sent besides the prompt: ``max_tokens`` (and the field it went under) and any
+    #: sampling parameter; None where nothing recorded them.
+    judge_settings: dict[str, Any] | None = None
+    judge_source: JudgeSource = "run"
+
+    @model_validator(mode="after")
+    def _consistent(self) -> JudgeIdentity:
+        prefix, sep, model = self.judge.partition(":")
+        if not sep or not prefix or model != self.judge_model:
+            raise ValueError(f"judge {self.judge!r} is not <provider>:{self.judge_model}")
+        if (prefix == UNKNOWN_PROVIDER) != (self.judge_provider is None):
+            raise ValueError("an unknown: judge, and only one, has no recorded provider")
+        return self
+
+    @classmethod
+    def unverified(cls, judge_model: str) -> JudgeIdentity:
+        """A judge recorded by model alone: its provider was never recorded, so none is claimed."""
+        return cls(judge=f"{UNKNOWN_PROVIDER}:{judge_model}", judge_provider=None,
+                   judge_model=judge_model, judge_source="backfill:unverified")
+
+    def label(self) -> str:
+        """The judge as every surface shows it, saying how it is known when not by the run."""
+        if self.judge_source == "backfill:unverified":
+            return f"{self.judge_model} (provider not recorded)"
+        if self.judge_source == "backfill:translator-log":
+            return f"{self.judge} (attributed from the translator log)"
+        return self.judge
+
+
+#: The judge fields a record carries, flat beside the rest of its identity.
+JUDGE_FIELDS = tuple(JudgeIdentity.model_fields)
+
+
+def judge_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """``record`` (an identity or a judging) with an old judge -- a ``judge_model`` and no
+    ``judge`` -- read as :meth:`JudgeIdentity.unverified`. Never as ``anthropic:``: nothing
+    recorded which provider served that model."""
+    if "judge" in record or not record.get("judge_model"):
+        return record
+    return {**record, **JudgeIdentity.unverified(record["judge_model"]).model_dump()}
+
+
+def recorded_judge_label(fields: dict[str, Any]) -> str | None:
+    """The judge that flat judge fields record -- an identity's, or a receipt ``config``'s -- as
+    every surface shows it (:meth:`JudgeIdentity.label`); None when no judge model graded."""
+    # A null provider is the record of an unknown one; any other null field is left unstated.
+    named = judge_fields({name: fields.get(name) for name in JUDGE_FIELDS
+                          if fields.get(name) is not None or name == "judge_provider"})
+    if not named.get("judge"):
+        return None
+    return JudgeIdentity.model_validate(named).label()
 
 
 class Identity(BaseModel):
@@ -234,10 +314,17 @@ class Identity(BaseModel):
     case_ids: list[str]
     agent: AgentRef
     judge_requested: bool
+    #: The :class:`JudgeIdentity` fields, flat; all None when no judge model graded. A record
+    #: from before they existed is read by :func:`judge_fields`.
+    judge: str | None = None
+    judge_provider: str | None = None
     judge_model: str | None
+    judge_endpoint: str | None = None
+    judge_settings: dict[str, Any] | None = None
+    judge_source: JudgeSource | None = None
     judge_samples: int
     #: The judge prompts' version (``JUDGE_PROMPT_VERSION``) when the judge model graded; with
-    #: ``judge_model`` it names this judging (decision 0040). None on runs recorded before it.
+    #: ``judge`` it names this judging (decision 0040). None on runs recorded before it.
     judge_prompt_version: str | None = None
     memrank_version: str
     #: The evaluation's own version, when it declares one (an evaluation file's ``version``).
@@ -247,6 +334,30 @@ class Identity(BaseModel):
     evaluation_fingerprint: str | None = None
     #: What finds the evaluation again: a shipped ref, or the evaluation file's path.
     evaluation_source: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_judge(cls, data: Any) -> Any:
+        return judge_fields(data) if isinstance(data, dict) else data
+
+    @model_validator(mode="after")
+    def _one_judge(self) -> Identity:
+        if self.judge is None and self.judge_model is not None:
+            raise ValueError(f"judge_model {self.judge_model!r} is recorded with no judge")
+        self.judge_identity()  # a judge, when named, is a consistent one
+        return self
+
+    def judge_identity(self) -> JudgeIdentity | None:
+        """The judge that graded this run, or None when no judge model did."""
+        if self.judge is None:
+            return None
+        return JudgeIdentity.model_validate(
+            {name: getattr(self, name) for name in JUDGE_FIELDS})
+
+    def judge_label(self) -> str | None:
+        """The judge as every surface shows it (:meth:`JudgeIdentity.label`), or None."""
+        judge = self.judge_identity()
+        return judge.label() if judge is not None else None
 
 
 class RunResult(BaseModel):

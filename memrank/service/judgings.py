@@ -16,7 +16,7 @@
 Decision 0040: judging is a step taken on a finished run, and every judging is kept side by
 side. A run's own judging is its ``result`` (:class:`~memrank.service.protocol.RunResult`); each
 judging added afterwards is a :class:`Judging` -- the scores over the same answers and every
-answer's verdict, named by its judge model and judge prompt version. The runs API stores the
+answer's verdict, named by its judge (as typed, with its endpoint) and judge prompt version. The runs API stores the
 verdicts as an artifact of the run and lists the scores in the run's record
 (:mod:`memrank.api.agent_judgings`); nothing here depends on the API.
 """
@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from memrank.service.protocol import Interval, RunResult
+from memrank.service.protocol import JUDGE_FIELDS, Interval, JudgeIdentity, JudgeSource, RunResult
 
-#: The alphabet of a judge model and prompt version: both become part of an artifact's name.
+#: The alphabet of a judge prompt version, which becomes part of an artifact's name. The judge
+#: does not: it may hold ``:`` and ``/``, so the artifact is named by its hash.
 _NAME = r"^[A-Za-z0-9._-]+$"
 
 
@@ -44,12 +46,19 @@ class QuestionVerdict(BaseModel):
     passed: bool | None = None
     rationale: str | None = None
     error: str | None = None
+    probability: float | None = None
 
 
 class Judging(BaseModel):
     """The scores and every verdict one judge gave a run's recorded answers."""
 
-    judge_model: str = Field(pattern=_NAME)
+    #: The :class:`~memrank.service.protocol.JudgeIdentity` fields, flat as in a run's identity.
+    judge: str
+    judge_provider: str | None
+    judge_model: str
+    judge_endpoint: str | None = None
+    judge_settings: dict[str, Any] | None = None
+    judge_source: JudgeSource = "run"
     judge_prompt_version: str = Field(pattern=_NAME)
     judge_samples: int = Field(ge=1)
     notice: str | None = None
@@ -61,9 +70,25 @@ class Judging(BaseModel):
     unjudged: int
     verdicts: list[QuestionVerdict]
 
-    def key(self) -> tuple[str, str]:
-        """What names this judging among a run's others."""
-        return self.judge_model, self.judge_prompt_version
+    @model_validator(mode="after")
+    def _a_judge(self) -> Judging:
+        self.identity()  # the same consistency a run's judge is held to
+        return self
+
+    def identity(self) -> JudgeIdentity:
+        """The judge that gave this judging."""
+        return JudgeIdentity.model_validate({name: getattr(self, name) for name in JUDGE_FIELDS})
+
+    def key(self) -> dict[str, str | None]:
+        """What names this judging among a run's others: the judge as typed, the endpoint it
+        reached, and the prompts' version."""
+        return {"judge": self.judge, "judge_endpoint": self.judge_endpoint,
+                "judge_prompt_version": self.judge_prompt_version}
+
+    def judge_hash(self) -> str:
+        """A file-name-safe name for the judge and its endpoint."""
+        named = f"{self.judge}|{self.judge_endpoint or ''}"
+        return hashlib.sha256(named.encode("utf-8")).hexdigest()[:16]
 
     def digest(self) -> str:
         """``sha256`` over the canonical JSON, so the same judging sent twice is recognised."""
@@ -82,14 +107,15 @@ def judging_of(judged: RunResult) -> Judging:
         ValueError: when no judge model graded it, so nothing names the judging.
     """
     identity = judged.identity
-    if not judged.judged or not identity.judge_model or not identity.judge_prompt_version:
-        raise ValueError("a judging is named by the judge model and prompt version that graded "
-                         "it; this result was not graded by a judge model")
+    judge = identity.judge_identity()
+    if not judged.judged or judge is None or not identity.judge_prompt_version:
+        raise ValueError("a judging is named by the judge and prompt version that graded it; "
+                         "this result was not graded by a judge model")
     verdicts = [QuestionVerdict(case_id=q.case_id, question_id=q.question_id, status=q.status,
                                 score=q.score, passed=q.passed, rationale=q.rationale,
-                                error=q.error)
+                                error=q.error, probability=q.probability)
                 for case in judged.cases for q in case.questions]
-    return Judging(judge_model=identity.judge_model,
+    return Judging(**judge.model_dump(),
                    judge_prompt_version=identity.judge_prompt_version,
                    judge_samples=identity.judge_samples, notice=judged.notice,
                    score=judged.score, per_category=judged.per_category,

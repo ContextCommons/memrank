@@ -9,7 +9,8 @@ The user asked you to evaluate **their agent** with Memrank. Done means: a run o
 finished, and you reported its score line, its likely range and the `View results` link.
 
 Memrank runs next to the user's agent: it feeds the agent past conversations, asks it questions,
-judges the answers with the organisation's Anthropic key, and records the run in the
+judges the answers with the organisation's saved key for its judge (Anthropic's by default;
+`--judge provider:model` names another), and records the run in the
 organisation's run history, where it has a page.
 
 Rules that hold throughout:

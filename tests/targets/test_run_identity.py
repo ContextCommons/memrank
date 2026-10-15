@@ -53,7 +53,7 @@ def test_split_overrides_separates_run_level_from_component_keys():
 def test_reader_override_reaches_the_judge_config():
     cfg = _judge_cfg_or_refuse(enabled=True, samples=1,
                                no_cache=True, reader="gpt-4o-mini")
-    assert cfg.answer_model == "gpt-4o-mini"
+    assert cfg.reader == "anthropic:gpt-4o-mini"
 
 
 def test_reader_without_judge_is_rejected_not_ignored(tmp_path):
@@ -76,4 +76,4 @@ def test_reader_defaults_are_unchanged_when_not_overridden():
     """Every existing comparison must remain valid."""
     cfg = _judge_cfg_or_refuse(enabled=True, samples=1,
                                no_cache=True)
-    assert cfg.answer_model == "claude-sonnet-4-6"
+    assert cfg.reader == "anthropic:claude-sonnet-4-6"

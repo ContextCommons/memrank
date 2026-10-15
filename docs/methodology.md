@@ -31,9 +31,15 @@ value is invented on an evaluation's behalf.
 
 **`judge`** scores generated-answer correctness using a model. The Python API requires callers
 to add it explicitly. Applying it without the required API key raises an error. `memrank run`
-judges with Claude Haiku (`claude-haiku-4-5`) unless `--judge-model` names another Anthropic
-model, and every result it produces names the model that judged it. Scores judged by different
-models are not comparable.
+judges with Claude Haiku (`anthropic:claude-haiku-4-5`) unless `--judge provider:model` names
+another judge: a built-in provider (`anthropic:<model>`, `openai:<model>`) or one of the
+organisation's named endpoints (`<endpoint>:<model>`, registered with `memrank endpoints add`).
+Every result it produces names the judge as typed, the provider and model it resolved to, and,
+for an endpoint, its `<id>@<revision>` fingerprint -- never its URL. Scores judged by different
+judges are not comparable. Each verdict is cached locally, keyed by the judging instructions, the
+model and the exact question and answer; a judge other than the built-in `anthropic:` also keys
+it by its adapter and endpoint, so moving an endpoint never replays another endpoint's
+verdicts.
 
 **Metric applicability.** `substring_recall_supported` says whether the answer-substring proxy
 applies. `composite_rankable` independently says whether the evaluation's own composite may be

@@ -62,7 +62,7 @@ def test_the_result_says_what_its_number_is_and_what_it_is_not():
 def test_a_judged_result_says_a_judge_decided_it():
     bench = JudgeFakeBenchmark()
     docs = {q["text"]: [] for q in bench.load()[0].queries}
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
     result = run_cell(FakeAdapter("fake", docs), bench, k=5, repeats=1, run_id_prefix="d",
                       model="gpt-4o-mini", token_budget=5000, judge=cfg)
 

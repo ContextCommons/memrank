@@ -14,13 +14,15 @@
 """A failure on the agent's or the judge's side, said in plain words: whose side, and what to do.
 
 The raw payload says exactly what happened, and it stays -- whole, after the lead. What it does
-not say is who has to act: an Anthropic 400 about a credit balance, relayed through a shipped
+not say is who has to act: a provider's 400 about a credit balance, relayed through a shipped
 agent's 502, reads like memrank breaking when it is the account behind the key this machine
 gave the agent. The lead sentence says that, and what to check; the detail follows unchanged.
 
-The judge is the other model account a run calls. Its refusals arrive as the Anthropic SDK's own
-exceptions, which are not memrank's, so without :func:`judge_failure` a run that answered every
-question ended on "a bug in memrank" when Anthropic declined to judge it.
+The judge is the other model account a run calls. Its refusals arrive as the adapters'
+:class:`~memrank.judging.providers.ProviderError`, and its silences as the transport's own
+exceptions, so without :func:`judge_failure` a run that answered every question ended on "a bug
+in memrank" when the provider declined to judge it. Every message names the provider as the spec
+did -- a built-in vendor, or an endpoint by its name -- and never an endpoint's URL.
 """
 
 from __future__ import annotations
@@ -34,11 +36,13 @@ from memrank.agents import SHIPPED_DIR
 from memrank.connect.base import AgentError
 from memrank.connect.spec import AgentSpec
 from memrank.errors import MemrankError, optional_import
+from memrank.judging.providers import ProviderError, ResolvedJudge, provider_label
 from memrank.outcome import Details, Step
-from memrank.reference import KEY_NAME, PROVIDER_REFUSED
+from memrank.reference import PROVIDER_REFUSED
 
 #: How Anthropic says an account has no credit left. It answers 400 with this in the message --
-#: the same status as a malformed request -- so the words are the only signal there is.
+#: the same status as a malformed request -- so the words are the only signal there is. OpenAI's
+#: is a code, ``insufficient_quota``, which the adapter carries as ``quota_exhausted``.
 _NO_CREDIT = "credit balance"
 #: The reason :func:`reason` gives for it, which an ending matches to say what to do.
 NO_CREDIT_REASON = "credit balance too low"
@@ -46,6 +50,11 @@ NO_CREDIT_REASON = "credit balance too low"
 #: A provider's refusal by status, in a few plain words.
 _REASONS = {401: "the key was not accepted", 403: "the key is not allowed to do this",
             429: "too many requests, even after waiting", 529: "the provider is overloaded"}
+
+
+def capitalized(text: str) -> str:
+    """``text`` opening a sentence: ``the endpoint 'router'`` becomes ``The endpoint 'router'``."""
+    return text[:1].upper() + text[1:]
 
 
 def is_shipped(agent: AgentSpec) -> bool:
@@ -72,12 +81,13 @@ def _provider(body: Any) -> dict[str, Any] | None:
 
 
 def _provider_lead(provider: dict[str, Any], agent: AgentSpec) -> str:
-    who = f"{provider['provider']}" + (f", {provider['status']}" if provider.get("status") else "")
+    who = provider_label(str(provider["provider"])) + (
+        f", {provider['status']}" if provider.get("status") else "")
     what = ("was refused by its provider" if provider.get("code") == PROVIDER_REFUSED
             else "failed before its provider answered")
     lead = f"The agent's model call {what} ({who}) -- that is the model account, not memrank."
     if is_shipped(agent):
-        name = str(provider.get("key_name") or KEY_NAME)
+        name = str(provider.get("key_name") or "key")
         return (f"{lead} Shipped agents call the model with the {name} on this machine, read "
                 f"from {key_source(name)}: check that key's account (credit, permissions, "
                 "limits).")
@@ -142,7 +152,7 @@ def account(exc: AgentError, agent: AgentSpec) -> Account:
         return Account(f"Your agent's {what}. That is on your agent's side, not memrank's.",
                        Step("Check your agent's own output for why."),
                        Details("your agent", (str(exc),)))
-    name = str(provider["provider"]).capitalize()
+    name = capitalized(provider_label(str(provider["provider"])))
     status = provider.get("status")
     said = str(provider.get("message") or exc)
     if provider.get("code") == PROVIDER_REFUSED:
@@ -150,7 +160,7 @@ def account(exc: AgentError, agent: AgentSpec) -> Account:
     else:
         happened = f"Your agent's model call never got an answer from {name}."
     if is_shipped(agent):
-        key = str(provider.get("key_name") or KEY_NAME)
+        key = str(provider.get("key_name") or "key")
         check = Step(f"Check the {name} account behind the {key} on this machine (read from "
                      f"{key_source(key)}): its credit, permissions and limits.")
     else:
@@ -159,17 +169,19 @@ def account(exc: AgentError, agent: AgentSpec) -> Account:
 
 
 class JudgeFailed(MemrankError):
-    """Judging stopped on Anthropic's side: it refused the calls, or never answered them.
+    """Judging stopped on the provider's side: it refused the calls, or never answered them.
 
     Attributes:
-        status: Anthropic's HTTP status; ``None`` when no answer came back at all.
+        target: The judge that failed: who to name, and whose key to save.
+        status: The provider's HTTP status; ``None`` when no answer came back at all.
         reason: Why, in a few plain words (:func:`reason`).
-        details: What Anthropic, or the connection to it, said -- verbatim.
+        details: What the provider, or the connection to it, said -- verbatim, URL removed.
     """
 
-    def __init__(self, message: str, *, status: int | None, why: str,
+    def __init__(self, message: str, *, target: ResolvedJudge, status: int | None, why: str,
                  details: tuple[str, ...]) -> None:
         super().__init__(message)
+        self.target = target
         self.status = status
         self.reason = why
         self.details = details
@@ -184,29 +196,45 @@ def _chain(exc: BaseException) -> tuple[str, ...]:
     return tuple(rows)
 
 
-def _refused(exc: Any) -> JudgeFailed:
-    body = exc.body if isinstance(exc.body, dict) else {}
-    said = body.get("error")
-    error: dict[str, Any] = said if isinstance(said, dict) else {}
-    message = str(error.get("message") or exc.message)
-    kind = f" {error['type']}" if error.get("type") else ""
-    request = f" ({exc.request_id})" if getattr(exc, "request_id", None) else ""
-    why = reason(exc.status_code, message)
-    return JudgeFailed(f"Anthropic refused to judge the answers: {why}", status=exc.status_code,
-                       why=why, details=(f"{exc.status_code}{kind}: {message}{request}",))
+def _without_url(rows: tuple[str, ...], target: ResolvedJudge) -> tuple[str, ...]:
+    """``rows`` with an endpoint's base URL and host taken out: an error is where one leaks."""
+    if target.endpoint is None:
+        return rows
+    base = target.api_base.rstrip("/")
+    host = base.split("://", 1)[-1].split("/", 1)[0]
+    named = f"<endpoint {target.provider}>"
+    return tuple(row.replace(base, named).replace(host, named) for row in rows)
 
 
-def judge_failure(exc: BaseException) -> JudgeFailed | None:
-    """``exc`` as a judge failure when it is Anthropic's refusal or silence; else ``None``.
+def _refused(exc: ProviderError, target: ResolvedJudge) -> JudgeFailed:
+    if exc.quota_exhausted:
+        why = NO_CREDIT_REASON
+    elif exc.status_code == 200:
+        why = "its reply had no text"
+    else:
+        why = reason(exc.status_code, exc.message)
+    request = f" ({exc.request_id})" if exc.request_id else ""
+    who = capitalized(provider_label(target.provider))
+    return JudgeFailed(f"{who} refused to judge the answers: {why}", target=target,
+                       status=exc.status_code, why=why,
+                       details=_without_url((f"{exc.status_code}: {exc.message}{request}",),
+                                            target))
 
-    A connection error covers more than the network: the SDK wraps anything that goes wrong
+
+def judge_failure(exc: BaseException, target: ResolvedJudge) -> JudgeFailed | None:
+    """``exc`` as a judge failure when it is ``target``'s refusal or silence; else ``None``.
+
+    A connection error covers more than the network: the transport wraps anything that goes wrong
     while sending, its own faults included, so the ending says no verdict came back and keeps
     the whole chain underneath rather than blaming the reader's network.
     """
+    import httpx
+
     anthropic = optional_import("anthropic", None)
-    if isinstance(exc, anthropic.APIStatusError):
-        return _refused(exc)
-    if isinstance(exc, anthropic.APIConnectionError):
-        return JudgeFailed("No verdict came back from Anthropic", status=None,
-                           why="it did not answer", details=_chain(exc))
+    if isinstance(exc, ProviderError):
+        return _refused(exc, target)
+    if isinstance(exc, anthropic.APIConnectionError | httpx.TransportError):
+        return JudgeFailed(f"No verdict came back from {provider_label(target.provider)}",
+                           target=target, status=None, why="it did not answer",
+                           details=_without_url(_chain(exc), target))
     return None

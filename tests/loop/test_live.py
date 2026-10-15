@@ -10,7 +10,7 @@ from tests.loop.conftest import PAGE, OrgApi, run_id_of
 from tests.loop.test_lanes import Memory, spec
 from tests.loop.test_run import quiet
 
-OPTIONS = RunOptions(evaluation="locomo", judge=False)
+OPTIONS = RunOptions(evaluation="locomo", judge=None)
 
 
 @pytest.fixture(autouse=True)
@@ -66,7 +66,7 @@ def test_a_progress_channel_that_fails_is_reported_once_and_the_run_finishes(eng
 def test_ctrl_c_leaves_the_run_stopped_online_and_a_resume_finishes_it_under_the_same_link(
         engine, tmp_path, org):
     echoed: list[str] = []
-    one_lane = RunOptions(evaluation="locomo", judge=False, concurrency=1)  # "3rd ask" is an order
+    one_lane = RunOptions(evaluation="locomo", judge=None, concurrency=1)  # "3rd ask" is an order
     with pytest.raises(KeyboardInterrupt):
         run_agent(engine, spec(Interrupting(at=3)), one_lane, tmp_path, org.hosted(None),
                   quiet(echoed))

@@ -53,7 +53,6 @@ from memrank.cli import monitor as monitor_cli
 from memrank.cli import runs_show as runs_show_cli
 from memrank.cli import sync as sync_cli
 from memrank.cli import watch as watch_cli
-from memrank.metrics import headline
 from memrank.placement import hosted, run_api_client
 from memrank.runs import registry
 from memrank.runs import status as run_status
@@ -149,6 +148,8 @@ class RunRow:
     org_composite: float | None = None
     org_cell_count: int | None = None
     org_score_kind: str | None = None
+    #: Who graded the org's score, as the API labels it; None when no judge did.
+    org_judge: str | None = None
     #: ``agent`` for a ``memrank run`` run, whose record is one result rather than engine cells:
     #: the API sends its score with ``cell_count`` 0, so the count cannot say it is one score.
     org_kind: str | None = None
@@ -161,6 +162,7 @@ class RunRow:
             "state": self.state, "age": self.age, "started_at": self.started_at,
             "place": self.place, "synced": self.synced,
             "score": _score_value(self), "score_kind": _score_kind(self),
+            "judge": _judge(self),
             "cells": [{"target": c.adapter, "eval": c.benchmark, "composite": c.composite,
                        "headline": c.headline, "headline_kind": c.headline_kind,
                        "config_hash": c.config_hash, "path": str(c.path)} for c in self.cells],
@@ -224,6 +226,7 @@ def _platform_row(payload: dict) -> RunRow:
                   org_composite=payload.get("composite"),
                   org_cell_count=payload.get("cell_count"),
                   org_score_kind=payload.get("score_kind"),
+                  org_judge=payload.get("judge"),
                   org_kind=payload.get("kind"))
 
 
@@ -342,6 +345,21 @@ def _score_kind(row: RunRow) -> str | None:
     return row.org_score_kind if _one_org_score(row) else None
 
 
+def _judge(row: RunRow) -> str | None:
+    """Who graded :func:`_score_value`'s number, from the same store; None when no judge did."""
+    local = [c for c in row.cells if c.headline is not None]
+    if local:
+        return local[0].judge if len(row.cells) == 1 else None
+    return row.org_judge if _one_org_score(row) else None
+
+
+def _judge_column(row: RunRow) -> str:
+    """The JUDGE column: who graded the score beside it, ``not judged``, or a dash with no score."""
+    if _score_value(row) is None:
+        return NOTHING_TO_SYNC  # the same placeholder: there is nothing here to name
+    return _judge(row) or "not judged"
+
+
 def _one_org_score(row: RunRow) -> bool:
     """Whether the org's number is one run's own score: a single engine cell, or an agent run.
 
@@ -358,15 +376,14 @@ def _composite(row: RunRow) -> str:
     Mirrors ``memrank.api.runs._score`` exactly -- the same run listed by this command and by
     the GUI must not read two different ways. `tests/cli/test_runs_cli_composite.py` drives both.
 
-    A judged score is marked, because a judged answer-correctness and a substring recall are
-    different measurements and a bare number cannot say which one it is.
+    Who judged it is the JUDGE column beside it (:func:`_judge_column`), which also tells a
+    judged answer-correctness from a substring recall, which a bare number cannot.
     """
     value = _score_value(row)
     if value is None:
         cells = len(row.cells) or (row.org_cell_count or 0)
         return f"{cells} cells" if cells > 1 else "—"
-    suffix = " j" if _score_kind(row) == headline.JUDGED else ""
-    return f"{value:.4f}{suffix}"
+    return f"{value:.4f}"
 
 
 def _nothing_matched(filters: list[str]) -> str:
@@ -416,6 +433,7 @@ _COLUMNS = (
     table.Column("AGE", width=5, align=">", styler=style.unit),
     table.Column("DONE", width=5, align=">"),
     table.Column("SCORE"),
+    table.Column("JUDGE", styler=style.unit),
 )
 
 
@@ -439,7 +457,8 @@ def _print_table(rows: list[RunRow]) -> None:
          row.synced,
          row.age,
          row.progress or "—",
-         _composite(row)]
+         _composite(row),
+         _judge_column(row)]
         for row in rows
     ]
     table.emit(_COLUMNS, body, title="Runs")

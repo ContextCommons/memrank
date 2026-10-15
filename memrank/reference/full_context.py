@@ -18,7 +18,8 @@ The baseline every memory agent is compared against. It speaks the OpenAI Chat C
 keyed by the request's ``user``, and answers a question by sending that session's entire
 history plus the question to the model -- through the evaluation's own reader prompt
 (``Benchmark.answer_prompt``: the benchmark's official one where it publishes one) and memrank's
-Anthropic client, the same ones the in-process harness answers with. ``memrank agents serve
+provider-backed reader (``--model provider:model``), the same ones the in-process harness answers
+with. ``memrank agents serve
 full-context --evaluation REF`` fixes the prompt for the process; the shipped spec passes the
 run's ``{evaluation}``.
 
@@ -38,9 +39,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from memrank.connect.template import CURRENT_DATE, SESSION_DATE
-from memrank.judging.judge import Completer, generate_answer
+from memrank.judging.judge import READER, Completer, generate_answer
 from memrank.judging.prompts import AnswerPrompt
-from memrank.reference import KEY_NAME, PROVIDER, PROVIDER_FAILED, PROVIDER_REFUSED
+from memrank.reference import PROVIDER_FAILED, PROVIDER_REFUSED
 
 FEED_OP = "feed"
 
@@ -78,15 +79,18 @@ def _question(messages: list[dict[str, Any]]) -> tuple[str, str | None]:
     return str(users[-1].get("content") or ""), date
 
 
-def provider_failure(exc: Exception) -> dict[str, Any]:
+def provider_failure(exc: Exception, provider: str, key_name: str) -> dict[str, Any]:
     """Why the model call failed, as the runner reads it: who refused, with what, and why.
+
+    ``provider`` and ``key_name`` are what the reader's spec resolved to: the provider called
+    (a built-in's name, or the endpoint's) and the key it was called with.
 
     ``refused`` when the provider answered with a status -- a spent balance, a bad key, a
     rejected request -- and ``failed`` when it never answered at all.
     """
     status = getattr(exc, "status_code", None)
     return {"code": PROVIDER_REFUSED if isinstance(status, int) else PROVIDER_FAILED,
-            "provider": PROVIDER, "status": status, "key_name": KEY_NAME,
+            "provider": provider, "status": status, "key_name": key_name,
             "message": f"{type(exc).__name__}: {exc}"}
 
 
@@ -97,8 +101,12 @@ def _completion(model: str, content: str) -> dict[str, Any]:
                          "message": {"role": "assistant", "content": content}}]}
 
 
-def create_app(complete: Completer, model: str, prompt: AnswerPrompt) -> FastAPI:
-    """The agent as an ASGI app, answering with ``model`` through ``complete`` under ``prompt``."""
+def create_app(complete: Completer, model: str, prompt: AnswerPrompt, *, provider: str,
+               key_name: str) -> FastAPI:
+    """The agent as an ASGI app, answering with ``model`` through ``complete`` under ``prompt``.
+
+    ``provider`` and ``key_name`` name who answers, for the account of a failed call.
+    """
     app = FastAPI(title="memrank full-context reference agent")
     sessions: dict[str, list[dict[str, Any]]] = {}
     lock = threading.Lock()
@@ -121,12 +129,12 @@ def create_app(complete: Completer, model: str, prompt: AnswerPrompt) -> FastAPI
             context = _history_text(history)
         question, date = _question(request.messages)
         try:
-            answer = generate_answer(complete, question=question, context=context, model=model,
+            answer = generate_answer(complete, question=question, context=context, model=READER,
                                      prompt=prompt, query_date=date)
         except Exception as exc:  # noqa: BLE001 - reported to the caller, never swallowed
             # A bare 500 would hide why. The provider's own words, and its status when it
             # answered, are what the runner records and explains (memrank.loop.explain).
-            raise HTTPException(502, detail=provider_failure(exc)) from exc
+            raise HTTPException(502, detail=provider_failure(exc, provider, key_name)) from exc
         return _completion(model, answer)
 
     return app

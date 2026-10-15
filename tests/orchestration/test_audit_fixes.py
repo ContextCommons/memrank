@@ -74,7 +74,7 @@ def test_mem0_default_mode_is_http_even_when_sdk_importable(monkeypatch):
 # --- S0-5: judge cap + counter shared across engines in a comparison ---------- #
 
 def test_run_cell_shares_judge_runtime_counter_and_reports_delta():
-    cfg = JudgeConfig(completer=make_fake_completer(), cache=False)
+    cfg = JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False)
     runtime = build_completer(cfg)
     _, counter = runtime
     run_cell(_adapter(), JudgeFakeBenchmark(), k=10, repeats=1, run_id_prefix="r1",
@@ -99,7 +99,7 @@ def test_compare_judge_spend_is_global_not_per_engine():
     bench = JudgeFakeBenchmark()
     one = run_cell(_adapter("e1"), bench, k=10, repeats=1, run_id_prefix="r",
                    model="gpt-4o-mini", token_budget=5000,
-                   judge=JudgeConfig(completer=make_fake_completer(), cache=False),
+                   judge=JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False),
                    ).to_dict()["receipt"]["extra"]["judge_calls_made"]
 
     assert required_calls(bench.load(), JudgeConfig(cache=False), targets=2) == 2 * one
@@ -349,14 +349,14 @@ class _UnsupportedBench(JudgeFakeBenchmark):
 
 
 def test_judge_zero_coverage_fails_loud():
-    cfg = JudgeConfig(completer=make_fake_completer(), cache=False)
+    cfg = JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False)
     with pytest.raises(ValueError):
         run_cell(_adapter(), _UnsupportedBench(), k=10, repeats=1, run_id_prefix="r",
                  model="gpt-4o-mini", token_budget=5000, judge=cfg).to_dict()
 
 
 def test_judge_zero_coverage_allowed_with_flag():
-    cfg = JudgeConfig(completer=make_fake_completer(), cache=False, allow_empty_coverage=True)
+    cfg = JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False, allow_empty_coverage=True)
     res = run_cell(_adapter(), _UnsupportedBench(), k=10, repeats=1, run_id_prefix="r",
                    model="gpt-4o-mini", token_budget=5000, judge=cfg).to_dict()
     assert res["judged_metrics"]["n_judged"] == 0
@@ -388,7 +388,7 @@ def test_judge_prompts_neutralize_embedded_sentinel():
 def test_judge_samples_not_collapsed_by_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("MEMRANK_CACHE_DIR", str(tmp_path))
     from memrank.judging.client import build_completer
-    from memrank.judging.judge import judge_answer
+    from memrank.judging.judge import JUDGE, judge_answer
     calls = {"n": 0}
 
     def completer(model, system, user):
@@ -398,9 +398,9 @@ def test_judge_samples_not_collapsed_by_cache(tmp_path, monkeypatch):
         passed = "grading pass #" in user
         return '{"passed": %s, "rationale": "r"}' % ("true" if passed else "false")
 
-    cfg = JudgeConfig(completer=completer, cache=True, samples=3)
+    cfg = JudgeConfig(completer_name="fake", completer=completer, cache=True, samples=3)
     complete, _ = build_completer(cfg)
-    v = judge_answer(complete, question="q", answer="a", gold="g", model="m", samples=3)
+    v = judge_answer(complete, question="q", answer="a", gold="g", model=JUDGE, samples=3)
     assert calls["n"] == 3   # three distinct cache keys -> three real calls
     assert v.passed is True  # majority of (fail, pass, pass)
 
@@ -417,7 +417,7 @@ def test_judge_cache_dir_is_owner_only(tmp_path, monkeypatch):
 # P1: zero-coverage must fail BEFORE any ingest/retrieve, not after.
 def test_judge_zero_coverage_fails_before_backend_work():
     a = _adapter()
-    cfg = JudgeConfig(completer=make_fake_completer(), cache=False)
+    cfg = JudgeConfig(completer_name="fake", completer=make_fake_completer(), cache=False)
     with pytest.raises(ValueError):
         run_cell(a, _UnsupportedBench(), k=10, repeats=1, run_id_prefix="r",
                  model="gpt-4o-mini", token_budget=5000, judge=cfg).to_dict()

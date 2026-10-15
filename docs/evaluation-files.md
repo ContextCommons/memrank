@@ -90,8 +90,8 @@ Built-in graders score 1 or 0; `rubric` and a command can give partial credit. A
 agent failed on scores 0, as for a shipped evaluation, and scores come with 95% intervals that
 resample whole cases.
 
-`judge` and `rubric` use the judge model -- Claude Haiku unless `memrank run --judge-model` names
-another -- with your organisation's saved Anthropic key. An
+`judge` and `rubric` use the judge model -- Claude Haiku unless `memrank run --judge
+provider:model` names another -- with your organisation's saved key for that judge. An
 evaluation none of whose questions use them needs no key, and `memrank evals check` says which
 case you are in.
 

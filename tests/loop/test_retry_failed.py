@@ -11,6 +11,7 @@ import pytest
 from memrank.connect.base import AgentError
 from memrank.connect.spec import AgentSpec
 from memrank.judging.judge import JudgeConfig
+from memrank.judging.providers import ADAPTERS
 from memrank.loop import judge as loop_judge
 from memrank.loop import run as loop_run
 from memrank.loop.run import RESULT_BEFORE_RETRY, RunOptions, run_agent
@@ -49,9 +50,11 @@ def paid(monkeypatch, tmp_path) -> FakeJudge:
     fake = FakeJudge()
 
     def judge(result: RunResult, api_key, cfg: JudgeConfig, judged=lambda: None) -> RunResult:
-        return loop_judge.judge(result, api_key, replace(cfg, completer=fake), judged=judged)
+        return loop_judge.judge(result, api_key, cfg, judged=judged)
 
     monkeypatch.setattr(loop_run, "judge", judge)
+    monkeypatch.setitem(ADAPTERS, "anthropic", lambda target, api_key, *, max_tokens: (
+        lambda model, system, user, sampling: fake(model, system, user)))
     return fake
 
 

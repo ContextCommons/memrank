@@ -38,8 +38,8 @@ def test_vote_majority_passed():
 
 def test_config_defaults():
     cfg = JudgeConfig()
-    assert cfg.answer_model == "claude-sonnet-4-6"
-    assert cfg.judge_model == "claude-opus-4-8"
+    assert cfg.reader == "anthropic:claude-sonnet-4-6"
+    assert cfg.judge == "anthropic:claude-opus-4-8"
     assert cfg.no_context_control is True
 
 
@@ -83,7 +83,7 @@ def test_judge_query_positive_runs_all_steps_and_control():
         "grade whether the provided memory": '{"passed": true, "rationale": "s"}',
         "matches the reference answer": '{"passed": true, "rationale": "c"}',
     })
-    cfg = JudgeConfig(completer=c, samples=1)
+    cfg = JudgeConfig(completer_name="fake", completer=c, samples=1)
     jq = judge_query(c, question="q", context="ctx", gold="vegetarian sushi", cfg=cfg, negative=False)
     assert jq.sufficiency is not None and jq.correctness.passed is True
     assert jq.generated_answer == "vegetarian sushi"
@@ -95,7 +95,7 @@ def test_judge_query_negative_skips_sufficiency():
         "answer the user's question": "I don't know",
         "should NOT answer affirmatively": '{"passed": true, "rationale": "ok"}',
     })
-    cfg = JudgeConfig(completer=c)
+    cfg = JudgeConfig(completer_name="fake", completer=c)
     jq = judge_query(c, question="q", context="ctx", gold="no peanuts", cfg=cfg, negative=True)
     assert jq.sufficiency is None and jq.correctness.passed is True
 

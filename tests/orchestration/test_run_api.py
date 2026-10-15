@@ -75,7 +75,7 @@ def test_the_judge_default_asks_the_benchmark(isolated):
 def test_an_explicit_judge_config_is_used_as_given(isolated):
     bench = JudgeFakeBenchmark()
     adapter = FakeAdapter("fake", {q["text"]: [] for q in bench.load()[0].queries})
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
 
     result = run_cell(adapter, bench, repeats=1, judge=cfg)
 

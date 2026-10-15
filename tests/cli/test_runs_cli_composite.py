@@ -27,15 +27,21 @@ from pathlib import Path
 
 import pytest
 
-from memrank.cli.runs import RunRow, _composite
-from memrank.metrics.headline import DEFAULT_QUALITY_METRIC, cell_headline
+from memrank.cli.runs import RunRow, _composite, _judge_column
+from memrank.metrics.headline import DEFAULT_QUALITY_METRIC, cell_headline, cell_judge
 from memrank.metrics.headline import JUDGED as JUDGED_KIND
 from memrank.runs.registry import RunInfo
 
+#: A receipt naming its judge in full, and one from before providers that names a bare model.
+HAIKU = {"judge_enabled": True, "judge": "anthropic:claude-haiku-4-5",
+         "judge_provider": "anthropic", "judge_model": "claude-haiku-4-5"}
+BARE_HAIKU = {"judge_enabled": True, "judge_model": "claude-haiku-4-5"}
+
 #: A judged cell at full coverage, a judged cell too sparse to rank, and the plain composites.
-JUDGED = {"composite": None, "composite_rankable": False,
+JUDGED = {"composite": None, "composite_rankable": False, "receipt": {"config": HAIKU},
           "judged_metrics": {"answer_correctness": 0.72, "judged_coverage": 0.9}}
 THIN_JUDGE = {"composite": None, "composite_rankable": False,
+              "receipt": {"config": BARE_HAIKU},
               "judged_metrics": {"answer_correctness": 0.72, "judged_coverage": 0.3}}
 LEGACY_BEAM = {"composite": 0.01, "substring_recall_supported": False}
 
@@ -47,7 +53,8 @@ def _info(cell: dict) -> RunInfo:
                    config_hash=None, composite=cell.get("composite"),
                    composite_rankable=cell.get("composite_rankable") is not False,
                    timestamp="2026-08-10T00:00:00+00:00",
-                   headline=head.value, headline_kind=head.kind, headline_coverage=head.coverage)
+                   headline=head.value, headline_kind=head.kind, headline_coverage=head.coverage,
+                   judge=cell_judge(cell))
 
 
 def _row(cells, **org) -> RunRow:
@@ -63,8 +70,8 @@ AGREEMENT = [
     ([], "—", (None, 0)),
     ([{"composite": 0.5, "composite_rankable": False}], "—", (None, 1)),
     # The judged score IS the score: a run whose benchmark reports no composite still has one.
-    ([JUDGED], "0.7200 j", (0.72, 1)),
-    ([THIN_JUDGE], "0.7200 j", (0.72, 1)),
+    ([JUDGED], "0.7200", (0.72, 1)),
+    ([THIN_JUDGE], "0.7200", (0.72, 1)),
     # Legacy artifact with no `composite_rankable`: the absent key falls back to
     # `substring_recall_supported`, so a legacy BEAM record is withheld -- the API used to rank it.
     ([LEGACY_BEAM], "—", (None, 1)),
@@ -81,7 +88,7 @@ def test_the_cli_renders_one_record_the_documented_way(cells, expected_cli, expe
 #: `cell_count` 0 (ATO-2365); an engine run's count still decides whether its number is one cell's.
 ORG_ONLY = [
     ({"org_kind": "agent", "org_composite": 0.5, "org_cell_count": 0,
-      "org_score_kind": JUDGED_KIND}, "0.5000 j"),
+      "org_score_kind": JUDGED_KIND}, "0.5000"),
     ({"org_kind": "agent", "org_composite": None, "org_cell_count": 0,
       "org_score_kind": None}, "—"),
     ({"org_kind": "engine", "org_composite": 0.5, "org_cell_count": 1,
@@ -98,3 +105,23 @@ ORG_ONLY = [
                               "engine-sweep", "engine-empty"])
 def test_a_run_listed_only_by_the_org_shows_the_orgs_score(org, expected):
     assert _composite(_row([], **org)) == expected
+
+
+#: (cells, the JUDGE column). An old receipt's bare model never reads as a provider.
+JUDGE_COLUMN = [
+    ([JUDGED], "anthropic:claude-haiku-4-5"),
+    ([THIN_JUDGE], "claude-haiku-4-5 (provider not recorded)"),
+    ([{"composite": 0.5}], "not judged"),
+    ([], _composite(_row([]))),
+]
+
+
+@pytest.mark.parametrize("cells,expected", JUDGE_COLUMN)
+def test_the_judge_is_shown_beside_a_local_score(cells, expected):
+    assert _judge_column(_row([_info(c) for c in cells])) == expected
+
+
+def test_the_judge_the_org_recorded_is_shown_beside_its_score():
+    row = _row([], org_kind="agent", org_composite=0.5, org_cell_count=0,
+               org_score_kind=JUDGED_KIND, org_judge="stub:claude-haiku-4-5")
+    assert _judge_column(row) == "stub:claude-haiku-4-5"

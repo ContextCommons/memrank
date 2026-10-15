@@ -34,7 +34,7 @@ from memrank.placement import run_api_client
 from memrank.runner import app
 from memrank.service.protocol import ANSWERS_FILE, RunResult, split_answers
 from memrank.service.scoring import apply_verdicts
-from tests.service.test_scoring import FAIL, PASS, recorded
+from tests.service.test_scoring import FAIL, PASS, judged_by, recorded
 
 runner = CliRunner()
 
@@ -48,7 +48,7 @@ def _result(judged: bool) -> RunResult:
     if not judged:
         return result
     return apply_verdicts(result, {"q1": PASS, "q2": FAIL, "q3": PASS},
-                          judge_model="claude-haiku-4-5", judge_samples=1)
+                          judge=judged_by("claude-haiku-4-5"), judge_samples=1)
 
 
 def _platform(record: dict, state: str = "stopped-success") -> dict:

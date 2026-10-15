@@ -7,6 +7,7 @@ import pytest
 from memrank.agents import shipped
 from memrank.connect.base import AgentError
 from memrank.connect.spec import AgentSpec
+from memrank.judging.providers import Endpoint, ProviderError, resolve
 from memrank.loop import explain
 from memrank.service.protocol import AgentRef
 
@@ -27,12 +28,12 @@ SHIPPED = str(shipped()["full-context"])
 #: (case, agent file, where the key is, the agent's status and body, what the lead must say)
 CASES = [
     ("shipped-agent-key-in-env", SHIPPED, "env", 502, REFUSED,
-     ("refused by its provider (anthropic, 400)", f"the {KEY} on this machine, read from "
+     ("refused by its provider (Anthropic, 400)", f"the {KEY} on this machine, read from "
       "the environment", "credit, permissions")),
     ("shipped-agent-key-in-wallet", SHIPPED, "wallet", 502, REFUSED,
      ("refused by its provider", "read from memrank's wallet (")),
     ("shipped-agent-provider-never-answered", SHIPPED, "env", 502, UNANSWERED,
-     ("failed before its provider answered (anthropic)",)),
+     ("failed before its provider answered (Anthropic)",)),
     ("your-agent-refused", "/work/my-agent.yaml", "env", 502, REFUSED,
      ("refused by its provider", "your agent calls its model with")),
     ("your-agent-http-error", "/work/my-agent.yaml", "env", 500, {"error": "boom"},
@@ -59,14 +60,11 @@ def test_the_lead_says_whose_side_and_the_detail_is_kept(monkeypatch, tmp_path, 
     assert "sk-secret-value" not in lead + detail
 
 
-def status_error(status: int, message: str, kind: str = "invalid_request_error"):
-    import anthropic
-    import httpx
-
-    body = {"type": "error", "error": {"type": kind, "message": message}}
-    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-    response = httpx.Response(status, json=body, request=request, headers={"request-id": "req_1"})
-    return anthropic.APIStatusError(f"Error code: {status}", response=response, body=body)
+ANTHROPIC = resolve("anthropic:claude-haiku-4-5")
+#: An endpoint on a private host, which no failure may name.
+ROUTER = resolve("router:bedrock/claude-haiku-4-5", (Endpoint(
+    name="router", adapter="openai", api_base="https://llm.internal.example/v1",
+    key_ref="ROUTER_KEY", fingerprint="e1@2"),))
 
 
 @pytest.mark.parametrize(("status", "message", "reason"), [
@@ -78,10 +76,21 @@ def status_error(status: int, message: str, kind: str = "invalid_request_error")
     (529, "Overloaded", "the provider is overloaded"),
     (500, "oops", "it failed on its side (500)"),
 ], ids=["no-credit", "bad-key", "forbidden", "rate-limited", "overloaded", "server"])
-def test_a_judge_refusal_is_named_with_anthropics_own_words(status, message, reason):
-    failure = explain.judge_failure(status_error(status, message))
+def test_a_judge_refusal_is_named_with_the_providers_own_words(status, message, reason):
+    error = ProviderError(message, provider="anthropic", status_code=status, request_id="req_1")
+    failure = explain.judge_failure(error, ANTHROPIC)
     assert failure is not None and (failure.status, failure.reason) == (status, reason)
-    assert failure.details == (f"{status} invalid_request_error: {message} (req_1)",)
+    assert failure.details == (f"{status}: {message} (req_1)",)
+    assert str(failure).startswith("Anthropic refused to judge the answers")
+
+
+def test_an_endpoints_exhausted_quota_is_no_credit_and_names_the_endpoint_not_its_url():
+    error = ProviderError("You exceeded your quota (https://llm.internal.example/v1)",
+                          provider="router", status_code=429, quota_exhausted=True)
+    failure = explain.judge_failure(error, ROUTER)
+    assert failure is not None and failure.reason == explain.NO_CREDIT_REASON
+    assert str(failure).startswith("The endpoint 'router' refused to judge")
+    assert "llm.internal.example" not in "".join(failure.details) + str(failure)
 
 
 def test_a_judge_that_never_answered_keeps_the_whole_chain():
@@ -95,13 +104,22 @@ def test_a_judge_that_never_answered_keeps_the_whole_chain():
         except TypeError as inner:
             raise anthropic.APIConnectionError(request=request) from inner
     except anthropic.APIConnectionError as sdk:
-        failure = explain.judge_failure(sdk)
+        failure = explain.judge_failure(sdk, ANTHROPIC)
     assert failure is not None and failure.status is None
     assert failure.details[1] == "caused by TypeError: unexpected keyword argument 'proxies'"
 
 
+def test_an_unreachable_endpoint_is_a_silence_with_its_url_taken_out():
+    import httpx
+
+    error = httpx.ConnectError("could not connect to llm.internal.example:443")
+    failure = explain.judge_failure(error, ROUTER)
+    assert failure is not None and failure.status is None
+    assert failure.details == ("ConnectError: could not connect to <endpoint router>:443",)
+
+
 def test_anything_else_is_not_a_judge_failure():
-    assert explain.judge_failure(ValueError("a bug")) is None
+    assert explain.judge_failure(ValueError("a bug"), ANTHROPIC) is None
 
 
 @pytest.mark.parametrize(("status", "body", "cause"), [

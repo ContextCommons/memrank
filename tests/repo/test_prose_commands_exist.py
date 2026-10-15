@@ -52,6 +52,24 @@ def _resolves(verb: str, sub: str | None) -> bool:
     return command.get_command(click.Context(command), sub) is not None
 
 
+def declares(text: str, flag: str) -> bool:
+    """Whether a command ``text`` names declares ``flag`` as a current (visible) option.
+
+    A retired flag stays declared, hidden, on the command that retired it; another command may
+    own the same spelling for its own purpose -- `memrank endpoints add --adapter openai` is not
+    the retired `submit --adapter`.
+    """
+    for verb, sub in VERB.findall(text):
+        command = CLI.get_command(click.Context(CLI), verb)  # type: ignore[attr-defined]
+        if isinstance(command, click.Group) and sub:
+            command = command.get_command(click.Context(command), sub)
+        if command is not None and any(
+                flag in param.opts and not getattr(param, "hidden", False)
+                for param in command.params):
+            return True
+    return False
+
+
 def offences(sentence: Sentence) -> list[str]:
     found = []
     for span in SPAN.findall(sentence.text):
@@ -60,7 +78,7 @@ def offences(sentence: Sentence) -> list[str]:
                 found.append(f"{sentence.where} names `{span}`, which the CLI does not have")
         for flag, instead in RETIRED_FLAGS.items():
             if re.search(rf"(?<![\w-]){re.escape(flag)}(?=[\s=]|$)", span) \
-                    and not NAMED_AS_RETIRED.search(sentence.text):
+                    and not NAMED_AS_RETIRED.search(sentence.text) and not declares(span, flag):
                 found.append(f"{sentence.where} teaches `{flag}` in `{span}` -- {instead}")
     return found
 

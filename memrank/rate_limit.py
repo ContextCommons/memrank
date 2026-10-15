@@ -71,6 +71,10 @@ def is_rate_limited(exc: BaseException) -> bool:
     ends up disagreeing about what a rate limit looks like, which is the failure the gate exists to
     prevent (CLAUDE.md: cross-cutting controls at one chokepoint).
     """
+    if getattr(exc, "quota_exhausted", False) is True:
+        # A 429 that means "no credit" (OpenAI's `insufficient_quota`): waiting cannot fix it, so
+        # it is a refusal, and the gate must not spend its deadline retrying it.
+        return False
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
     if status == 429 or str(status) == "429":
         return True
@@ -91,7 +95,15 @@ def retry_after_seconds(exc: BaseException) -> float | None:
     improvement over guessing, so a provider that omits it must degrade to backoff rather than
     fail the run.
     """
-    headers = getattr(getattr(exc, "response", None), "headers", None)
+    stated = getattr(exc, "retry_after", None)
+    if isinstance(stated, (int, float)) and not isinstance(stated, bool) and stated > 0:
+        # Already read from the headers by the adapter that raised (ProviderError).
+        return min(float(stated), MAX_PAUSE_S)
+    return retry_after_from_headers(getattr(getattr(exc, "response", None), "headers", None))
+
+
+def retry_after_from_headers(headers: Any) -> float | None:
+    """The wait a response's headers ask for (see :func:`retry_after_seconds`), or ``None``."""
     get = getattr(headers, "get", None)
     if get is None:
         return None

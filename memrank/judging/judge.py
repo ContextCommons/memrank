@@ -14,8 +14,9 @@
 """Pure, injectable LLM-judge scoring.
 
 A ``Completer`` is ``(model, system, user) -> text``; all functions take one so
-the judge is fully testable without the network. The Anthropic-backed completer
-(with caching + a hard call cap) lives in ``judge_client``. Verdicts are strict JSON, bare or
+the judge is fully testable without the network. Judging code passes a role (:data:`READER`,
+:data:`JUDGE`) as the model; the provider-backed completer that resolves it (with caching and a
+call counter) lives in :mod:`memrank.judging.client`. Verdicts are strict JSON, bare or
 inside a single markdown code fence; anything else raises (no silent fallback).
 """
 
@@ -28,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 from memrank.errors import MemrankError
 from memrank.judging import prompts as jp
+from memrank.judging.providers.spec import Endpoint, check_endpoints, parse_spec, resolve
 
 if TYPE_CHECKING:  # `judge_shape` imports this module; the annotation must not close the loop.
     from memrank.judging.shape import JudgeShape
@@ -76,21 +78,42 @@ class JudgedQuery:
     ordering: dict[str, Any] | None = None
 
 
+#: The two roles a model plays in judging. Judging code passes the ROLE where a completer expects
+#: a model, and :func:`memrank.judging.client.build_completer` turns it into that role's provider
+#: and model. Sampling follows the role, never model equality: a reader and a judge that share a
+#: model are still a pinned reader and a provider-default judge.
+READER = "reader"
+JUDGE = "judge"
+
+
 @dataclass
 class JudgeConfig:
-    answer_model: str = "claude-sonnet-4-6"
-    judge_model: str = "claude-opus-4-8"
+    """How the reader and the judge are reached, and how a query is graded.
+
+    ``reader`` and ``judge`` are ``provider:model`` specs (:mod:`memrank.judging.providers`):
+    ``anthropic:``, ``openai:``, or the name of one of ``endpoints``.
+
+    ``completer`` replaces the providers with your own code (``(model, system, user) -> text``),
+    called with the model part of the role's spec. It must carry a ``completer_name``: records then
+    name the judge ``custom:<completer_name>``, and the judge cache is keyed by that name -- so
+    changing what a completer does means giving it a new name, or ``cache=False``, or the cache
+    replays the old completer's answers.
+    """
+
+    reader: str = "anthropic:claude-sonnet-4-6"
+    judge: str = "anthropic:claude-opus-4-8"
     samples: int = 1
     token_budget: int = 5000
     no_context_control: bool = True
     cache: bool = True
     allow_empty_coverage: bool = False
-    # Sampling temperature for ANSWER-model calls (the reader), pinned at 0 for
-    # reproducibility -- the protocol BEAM itself pins and the piece we can pin: the judge
-    # model (claude-opus-4-8) rejects the parameter, so judge calls stay provider-default
-    # and the receipt records both truthfully.
+    # Sampling temperature for READER calls, pinned at 0 for reproducibility -- the protocol
+    # BEAM itself pins and the piece we can pin: the judge model (claude-opus-4-8) rejects the
+    # parameter, so judge calls stay provider-default and the receipt records both truthfully.
     answer_temperature: float = 0.0
     completer: Completer | None = None
+    completer_name: str | None = None
+    endpoints: tuple[Endpoint, ...] = ()
     # The reader prompt answers are generated with. `run_cell` sets it from the benchmark it runs
     # (Benchmark.answer_prompt), and the receipt records it; memrank's own reader is only the
     # default for a configuration built without a benchmark.
@@ -102,6 +125,35 @@ class JudgeConfig:
         for name in ("samples", "token_budget"):
             if getattr(self, name) < 1:
                 raise ValueError(f"JudgeConfig.{name} must be >= 1, got {getattr(self, name)}")
+        self._check_routes()
+
+    def _check_routes(self) -> None:
+        """Refuse a spec, endpoint list or completer that could not say who judged."""
+        if (self.completer is None) != (self.completer_name is None):
+            raise ValueError("JudgeConfig.completer and completer_name go together: records name "
+                             "a custom completer's judge custom:<completer_name>")
+        if self.completer_name is not None and (
+                not self.completer_name or "|" in self.completer_name):
+            raise ValueError(f"completer_name must be non-empty and contain no '|', "
+                             f"got {self.completer_name!r}")
+        check_endpoints(self.endpoints)
+        for spec in (self.reader, self.judge):
+            if self.completer is None:
+                resolve(spec, self.endpoints)
+            else:
+                parse_spec(spec)
+
+    def spec(self, role: str) -> str:
+        """The spec that plays ``role`` (:data:`READER` or :data:`JUDGE`)."""
+        if role == READER:
+            return self.reader
+        if role == JUDGE:
+            return self.judge
+        raise ValueError(f"unknown judging role {role!r}; expected {READER!r} or {JUDGE!r}")
+
+    def model(self, role: str) -> str:
+        """The model part of the spec that plays ``role``."""
+        return parse_spec(self.spec(role))[1]
 
 
 #: The one delimiter a judge reply may carry around its JSON object. Whether a JSON answer comes
@@ -447,21 +499,21 @@ def judge_query(complete: Completer, *, question: str, context: str, gold: str,
         # or a date-driven improvement would be misread as context dependence. It gets the same
         # per-type prompt for the same reason.
         nc_answer = generate_answer(complete, question=question, context="",
-                                    model=cfg.answer_model, prompt=cfg.answer_prompt,
+                                    model=READER, prompt=cfg.answer_prompt,
                                     query_date=query_date)
         answered_without_context = judge_answer(
             complete, question=question, answer=nc_answer, gold=gold,
-            model=cfg.judge_model, samples=cfg.samples, negative=negative,
+            model=JUDGE, samples=cfg.samples, negative=negative,
             prompt=prompt).passed
     sufficiency = None
     if not negative:
         sufficiency = judge_sufficiency(complete, question=question, context=context,
-                                        gold=gold, model=cfg.judge_model, samples=cfg.samples)
+                                        gold=gold, model=JUDGE, samples=cfg.samples)
     answer = generate_answer(complete, question=question, context=context,
-                             model=cfg.answer_model, prompt=cfg.answer_prompt,
+                             model=READER, prompt=cfg.answer_prompt,
                              query_date=query_date)
     correctness = judge_answer(complete, question=question, answer=answer, gold=gold,
-                               model=cfg.judge_model, samples=cfg.samples, negative=negative,
+                               model=JUDGE, samples=cfg.samples, negative=negative,
                                prompt=prompt)
     return JudgedQuery(answer, sufficiency, correctness, answered_without_context,
                        score=1.0 if correctness.passed else 0.0)
