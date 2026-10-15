@@ -73,6 +73,10 @@ _NOT_A_RESULT = {
     ("memrank/runs/push.py", "data"),
     ("memrank/cli/watch.py", "data"),
     ("memrank/cli/watch.py", "record"),
+    # An org's named LLM endpoint: `adapter` is the API it speaks (openai | anthropic), not a
+    # result's system under test.
+    ("memrank/cli/endpoints.py", "row"),
+    ("memrank/loop/judge_target.py", "row"),
 }
 
 

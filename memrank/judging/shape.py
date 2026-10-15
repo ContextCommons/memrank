@@ -38,6 +38,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from memrank.judging.judge import (
+    JUDGE,
+    READER,
     Completer,
     JudgeConfig,
     JudgedQuery,
@@ -239,7 +241,7 @@ class BinaryJudgeShape(JudgeShape):
     def grade_answer(self, complete: Completer, cfg: JudgeConfig, *,
                      query: dict[str, Any], answer: str) -> AnswerGrade:
         verdict = judge_answer(complete, question=query["text"], answer=answer,
-                               gold=gold_answer(query), model=cfg.judge_model,
+                               gold=gold_answer(query), model=JUDGE,
                                samples=cfg.samples, negative=is_negative(query),
                                prompt=self._prompt_for(query))
         return AnswerGrade(verdict, score=1.0 if verdict.passed else 0.0)
@@ -285,7 +287,7 @@ class NuggetJudgeShape(JudgeShape):
     def _score(self, complete: Completer, cfg: JudgeConfig, *, question: str, answer: str,
                rubric: list[str]) -> list[NuggetScore]:
         return [grade_nugget(complete, question=question, answer=answer, nugget=item,
-                             model=cfg.judge_model, samples=cfg.samples) for item in rubric]
+                             model=JUDGE, samples=cfg.samples) for item in rubric]
 
     def grade(self, complete: Completer, cfg: JudgeConfig, *,
               query: dict[str, Any], context: str) -> JudgedQuery:
@@ -295,7 +297,7 @@ class NuggetJudgeShape(JudgeShape):
             # Graded the same way as the real answer, so the two are on one scale. This half is
             # engine-independent and therefore cache-shared across a sweep -- it is paid once.
             blind = generate_answer(complete, question=question, context="",
-                                    model=cfg.answer_model, prompt=cfg.answer_prompt)
+                                    model=READER, prompt=cfg.answer_prompt)
             answered_without_context = _mean(
                 self._score(complete, cfg, question=question, answer=blind, rubric=rubric)) == 1.0
         sufficiency = None
@@ -303,10 +305,10 @@ class NuggetJudgeShape(JudgeShape):
             # Still skipped for abstention: BEAM builds those probes to be unanswerable, so asking
             # whether the snippets suffice can only fail and would measure nothing.
             sufficiency = judge_rubric_sufficiency(complete, question=question, context=context,
-                                                   rubric=rubric, model=cfg.judge_model,
+                                                   rubric=rubric, model=JUDGE,
                                                    samples=cfg.samples)
         answer = generate_answer(complete, question=question, context=context,
-                                 model=cfg.answer_model, prompt=cfg.answer_prompt)
+                                 model=READER, prompt=cfg.answer_prompt)
         graded = self.grade_answer(complete, cfg, query=query, answer=answer)
         return JudgedQuery(answer, sufficiency, graded.correctness, answered_without_context,
                            score=graded.score, nuggets=graded.nuggets)
@@ -382,7 +384,7 @@ class BeamJudgeShape(NuggetJudgeShape):
                gold: list[str]) -> tuple[OrderingScore, list[dict[str, Any]]]:
         """Extract the answer's events, align them to `gold`, and score the aligned sequence."""
         predicted = extract_events(complete, question=question, answer=answer,
-                                   model=cfg.judge_model)[:_MAX_PREDICTED_FACTOR * len(gold)]
+                                   model=JUDGE)[:_MAX_PREDICTED_FACTOR * len(gold)]
         unused = list(range(len(gold)))
         canonical: list[str] = []
         pairs: list[dict[str, Any]] = []
@@ -390,7 +392,7 @@ class BeamJudgeShape(NuggetJudgeShape):
             match = next(
                 (i for i in unused
                  if judge_equivalent(complete, reference=gold[i], candidate=event,
-                                     model=cfg.judge_model, samples=cfg.samples).passed),
+                                     model=JUDGE, samples=cfg.samples).passed),
                 None)
             if match is None:
                 canonical.append(event)
@@ -409,16 +411,16 @@ class BeamJudgeShape(NuggetJudgeShape):
         answered_without_context = False
         if cfg.no_context_control:
             blind = generate_answer(complete, question=question, context="",
-                                    model=cfg.answer_model, prompt=cfg.answer_prompt)
+                                    model=READER, prompt=cfg.answer_prompt)
             answered_without_context = self._align(
                 complete, cfg, question=question, answer=blind, gold=gold)[0].score == 1.0
         sufficiency = None
         if not is_negative(query):
             sufficiency = judge_rubric_sufficiency(complete, question=question, context=context,
-                                                   rubric=gold, model=cfg.judge_model,
+                                                   rubric=gold, model=JUDGE,
                                                    samples=cfg.samples)
         answer = generate_answer(complete, question=question, context=context,
-                                 model=cfg.answer_model, prompt=cfg.answer_prompt)
+                                 model=READER, prompt=cfg.answer_prompt)
         graded = self.grade_answer(complete, cfg, query=query, answer=answer)
         return JudgedQuery(answer, sufficiency, graded.correctness, answered_without_context,
                            score=graded.score, ordering=graded.ordering)

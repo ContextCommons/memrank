@@ -20,10 +20,11 @@ sending the same record again -- ``memrank run --resume``. The same route regist
 it starts and records where it stopped (:func:`register`, :mod:`memrank.loop.live`).
 
 A login is required before anything runs (:func:`connect`), with the stored session and the
-organisation ``memrank auth login`` chose. There is no offline mode. A judged run also needs the
-organisation's saved ``ANTHROPIC_API_KEY``, fetched the way ``submit --org`` fetches an org's
+organisation ``memrank auth login`` chose. There is no offline mode. A judged run also resolves its
+``--judge`` against the organisation's endpoints (:mod:`memrank.loop.judge_target`) and needs the
+organisation's saved key for that judge, fetched the way ``submit --org`` fetches an org's
 credentials; without it the run asks for one at a terminal, and is refused before it starts
-anywhere else (:mod:`memrank.loop.judge_key`).
+anywhere else (:mod:`memrank.loop.judge_key`). The key is then checked against the judge's model.
 """
 
 from __future__ import annotations
@@ -36,7 +37,10 @@ from typing import Any
 from memrank import settings
 from memrank.accounts.run_secrets import SIGN_IN, session_rejected
 from memrank.errors import ActionRequired
+from memrank.judging.providers import ResolvedJudge
+from memrank.judging.providers.check import model_refusal
 from memrank.loop.judge_key import KeyPrompt, Rerun, judge_key
+from memrank.loop.judge_target import ModelCheck, check_model, resolve_run_judge
 from memrank.outcome import Step
 from memrank.placement import run_api_client
 from memrank.placement.run_api_client import RunApiError
@@ -64,13 +68,15 @@ class Account:
 
 @dataclass
 class Hosted:
-    """Where runs are recorded: the signed-in API client, the organisation, its judge key."""
+    """Where runs are recorded: the signed-in API client, the organisation, the judge and its key."""
 
     http: Any
     org: str
     account: Account
-    #: The organisation's saved ``ANTHROPIC_API_KEY``; ``None`` when judging is off.
+    #: The organisation's saved key for ``judge``; ``None`` when judging is off.
     judge_key: str | None = None
+    #: What the run's ``--judge`` resolved to; ``None`` when judging is off.
+    judge: ResolvedJudge | None = None
 
 
 def _signed_in() -> Any:
@@ -116,13 +122,19 @@ def _account(http: Any, org: str) -> Account:
     return Account(login=me["login"], email=me["email"], org_name=names[org])
 
 
-def connect(*, judge: bool, ask: KeyPrompt | None = None, rerun: Rerun | None = None) -> Hosted:
-    """The signed-in client and organisation, and its judge key when ``judge``; refuse without.
+def _check(target: ResolvedJudge, key: str, models_listing: bool) -> str | None:
+    return model_refusal(target, key, models_listing=models_listing)
+
+
+def connect(*, judge: str | None, ask: KeyPrompt | None = None, rerun: Rerun | None = None,
+            check: ModelCheck = _check) -> Hosted:
+    """The signed-in client and organisation, and the judge with its key; refuse without.
 
     Args:
-        judge: Whether the run is judged, and so needs the organisation's Anthropic key.
+        judge: The run's ``provider:model`` judge spec; ``None`` when the run calls no judge.
         ask: How to ask for a missing key; ``None`` where nobody is at a terminal to answer.
         rerun: The user's own command with ``--no-judge``, offered when judging cannot go ahead.
+        check: Whether the key reaches the judge's model; a test's stand-in for the network.
     """
     http = _signed_in()
     org = settings.get("defaults.org")
@@ -132,8 +144,12 @@ def connect(*, judge: bool, ask: KeyPrompt | None = None, rerun: Rerun | None = 
                                    Step("Or name one you belong to:", (_SET_ORG,))))
     _check_membership(http, org)
     account = _account(http, org)
-    key = judge_key(http, org, ask, rerun) if judge else None
-    return Hosted(http=http, org=org, account=account, judge_key=key)
+    if judge is None:
+        return Hosted(http=http, org=org, account=account)
+    target, models_listing = resolve_run_judge(http, org, judge)
+    key = judge_key(http, org, target, ask, rerun)
+    check_model(target, key, models_listing, org, check)
+    return Hosted(http=http, org=org, account=account, judge_key=key, judge=target)
 
 
 def _started_at(run_id: str) -> str:
@@ -176,7 +192,7 @@ def add_judging(hosted: Hosted, judged: RunResult, echo: Callable[[str], None]) 
     stored = run_api_client.add_judging(hosted.http, hosted.org, judged.run_id,
                                         judging.model_dump(mode="json"))
     verb = "Added" if stored["added"] else "Already had"
-    echo(prefixed(f"{verb} the judging by {judging.judge_model} "
+    echo(prefixed(f"{verb} the judging by {judging.identity().label()} "
                   f"(prompts {judging.judge_prompt_version}) in {identity(hosted.org)}"))
     return stored
 

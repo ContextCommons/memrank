@@ -165,9 +165,52 @@ the arithmetic of `memrank.SpanRecall`, per task instead of per unit. `1.0` is a
 correctness**, and says so in the `why` of every value, so the caveat travels with the value.
 
 **`Judge`** has a model adjudicate the answer against what was expected; `value` is a bool and
-`why` the model's rationale. Construction needs no key, but measurement requires
-`ANTHROPIC_API_KEY` and raises if it is missing. Setup validation separately checks whether
-answers will be available. See [methodology](methodology.md) for judging and data disclosure.
+`why` the model's rationale. Construction needs no key, but measurement requires the key its
+judge's provider names (`ANTHROPIC_API_KEY` for the default judge) and raises if it is missing.
+Setup validation separately checks whether answers will be available. See
+[methodology](methodology.md) for judging and data disclosure.
+
+### Choosing who judges
+
+`Judge` takes a `JudgeConfig`, whose `judge` and `reader` are `provider:model` strings. The text
+after the first `:` reaches the provider unchanged, so model ids containing `/` or `:` work.
+
+```python
+from memrank.instrument.measures import Judge
+from memrank.judging.judge import JudgeConfig
+from memrank.judging.providers import Endpoint
+
+Judge(JudgeConfig(judge="openai:gpt-5"))                # OPENAI_API_KEY
+
+lab = Endpoint(name="lab", adapter="openai",            # any OpenAI-compatible server
+               api_base="https://llm.example.com/v1", key_ref="LAB_API_KEY")
+Judge(JudgeConfig(judge="lab:my-model", endpoints=(lab,)))
+```
+
+The built-in providers are `anthropic` (`ANTHROPIC_API_KEY`) and `openai` (`OPENAI_API_KEY`). A
+string with no provider is refused. A provider that rejects a parameter memrank sends -- the
+reader's `temperature=0` -- fails with the provider's own error; nothing is dropped. Records
+carry the judge as typed, the provider and model it resolved to, and for an endpoint
+`local:<name>` instead of its URL.
+
+To judge with your own code, pass a completer, any `(model, system, user) -> text`, together with
+a name:
+
+```python
+from memrank.instrument.measures import Judge
+from memrank.judging.judge import JudgeConfig
+
+
+def my_judge(model: str, system: str, user: str) -> str:
+    ...
+
+Judge(JudgeConfig(completer=my_judge, completer_name="my-judge-v1"))
+```
+
+It is called with the model part of `reader` and `judge`, and records name the judge
+`custom:my-judge-v1`. The judge cache is keyed by that name, so **when you change what the
+completer does, give it a new name** (or pass `cache=False`); otherwise the cache replays the
+old completer's verdicts.
 
 **`Latency`** reports p50 and p95 per step, over the timings memrank took at its own call
 boundary -- never a figure a system reported about itself. Each value carries the sample count

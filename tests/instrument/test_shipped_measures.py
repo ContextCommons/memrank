@@ -118,7 +118,7 @@ def test_a_judge_decides_with_a_model_and_records_what_it_said():
         asked.append(model)
         return '{"passed": true, "rationale": "the answer names the profession"}'
 
-    judge = Judge(JudgeConfig(completer=completer, cache=False, no_context_control=False))
+    judge = Judge(JudgeConfig(completer_name="fake", completer=completer, cache=False, no_context_control=False))
 
     values = judge.measure([trace(answered="a marine biologist")], ())
 
@@ -130,7 +130,7 @@ def test_a_judge_decides_with_a_model_and_records_what_it_said():
 def test_a_judge_says_nothing_rather_than_zero_when_nothing_answered():
     from memrank.judging.judge import JudgeConfig
 
-    judge = Judge(JudgeConfig(completer=lambda *a: "{}", cache=False))
+    judge = Judge(JudgeConfig(completer_name="fake", completer=lambda *a: "{}", cache=False))
 
     values = judge.measure([trace()], ())
 

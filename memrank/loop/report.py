@@ -88,8 +88,9 @@ def result_facts(result: RunResult,
     if result.notice and result.judged:
         facts.append(("Notice", result.notice))
     facts.append(("Speed", readout.speed(result)))
-    if result.identity.judge_model:
-        facts.append(("Judged by", result.identity.judge_model))
+    judge = result.identity.judge_label()
+    if judge:
+        facts.append(("Judged by", judge))
     return facts
 
 

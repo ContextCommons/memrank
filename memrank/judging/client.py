@@ -11,7 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""Anthropic-backed completer with response-only caching and a billable-call counter.
+"""The provider-backed completer, with response-only caching and a billable-call counter.
+
+Each role -- the reader and the judge -- resolves to its provider through
+:mod:`memrank.judging.providers`, or to a Level 2 completer of your own.
 
 The counter sits at the single egress point so a judged run reports exactly what it spent. It used
 to be a hard CAP as well; that ceiling is gone, because bounding the scorer would have made which
@@ -28,7 +31,8 @@ import hashlib
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,16 +40,21 @@ if TYPE_CHECKING:
     from memrank.rate_limit import RateLimitGate
 
 from memrank.atomic_json import staging_path
-from memrank.judging.judge import Completer, JudgeConfig
+from memrank.judging.judge import JUDGE, READER, Completer, JudgeConfig
 from memrank.judging.prompts import JUDGE_PROMPT_VERSION
+from memrank.judging.providers import (
+    ADAPTERS,
+    BUILTINS,
+    ProviderError,
+    ResolvedJudge,
+    Send,
+    resolve,
+)
 
 _MAX_TOKENS = 512
 
-# The credential the judge needs, named once so the runner can require it up front rather than
-# hardcoding the same string a second time. The judge is Anthropic-backed, so both the reader and
-# the grader models must be Anthropic models.
-JUDGE_SECRET = "ANTHROPIC_API_KEY"
-JUDGE_MODEL_PREFIX = "claude-"
+# The credential the deprecated submit and cloud path judges with: it stays Anthropic-only.
+JUDGE_SECRET = BUILTINS["anthropic"].key_name
 
 
 def _cache_dir() -> Path:
@@ -62,10 +71,17 @@ def _cache_dir() -> Path:
     return out
 
 
-def cached_completer(inner: Completer, *, cache_dir: Path, prompt_version: str) -> Completer:
+def cached_completer(inner: Completer, *, cache_dir: Path, prompt_version: str,
+                     key_prefix: str = "") -> Completer:
+    """``inner`` with its responses cached under a key of ``key_prefix`` and the prompt.
+
+    ``key_prefix`` names who answers (:func:`cache_prefix`, or ``custom:<name>|``); it is empty for
+    the built-in Anthropic provider, whose keys are byte-identical to the ones written before
+    providers existed.
+    """
     def complete(model: str, system: str, user: str) -> str:
         key = hashlib.sha256(
-            f"{prompt_version}|{model}|{_MAX_TOKENS}|{system}|{user}".encode()
+            f"{key_prefix}{prompt_version}|{model}|{_MAX_TOKENS}|{system}|{user}".encode()
         ).hexdigest()
         path = cache_dir / f"{key}.txt"
         if path.exists():
@@ -174,54 +190,87 @@ def gated_completer(inner: Completer, *,
     return complete
 
 
-def sampling_params(model: str, cfg: JudgeConfig) -> dict[str, float]:
-    """The sampling kwargs one API call gets: pinned for the reader, none for the judge.
+def sampling_params(role: str, cfg: JudgeConfig) -> dict[str, float]:
+    """The sampling kwargs one call gets, by ROLE: pinned for the reader, none for the judge.
 
-    Answer-model calls carry ``temperature=cfg.answer_temperature`` (0 by default -- the
-    reproducibility pin BEAM's own protocol specifies). Judge-model calls carry nothing:
-    claude-opus-4-8 rejects the parameter, so the judge runs provider-default sampling and
-    ``_judge_receipt_config`` records that split rather than implying both were pinned.
+    Reader calls carry ``temperature=cfg.answer_temperature`` (0 by default -- the reproducibility
+    pin BEAM's own protocol specifies). Judge calls carry nothing: claude-opus-4-8 rejects the
+    parameter, so the judge runs provider-default sampling and ``_judge_receipt_config`` records
+    that split rather than implying both were pinned. The role decides, not the model: it used to
+    be ``model == answer_model``, which gave a judge that shared the reader's model a temperature.
+    A provider that rejects ``temperature`` for the reader fails with its own 400; the parameter is
+    never dropped.
     """
-    if model == cfg.answer_model:
-        return {"temperature": cfg.answer_temperature}
-    return {}
+    cfg.spec(role)  # refuses an unknown role
+    return {"temperature": cfg.answer_temperature} if role == READER else {}
 
 
-def anthropic_completer(cfg: JudgeConfig, *, api_key: str | None = None) -> Completer:
-    """The Anthropic-backed completer.
+def cache_prefix(target: ResolvedJudge) -> str:
+    """What a cache key carries before today's ``prompt_version|model|...`` for ``target``.
 
-    ``api_key`` is given by ``memrank run``, which judges with the organisation's saved key
-    (decision 0037); without it the key resolves on this machine. The endpoint is the SDK's own
-    setting (``ANTHROPIC_BASE_URL``), which is how a local stack reaches a stand-in provider.
+    The built-in ``anthropic`` carries nothing, so every existing cache entry stays valid and old
+    runs do not pay again. Any other provider carries its adapter and endpoint -- and a named
+    endpoint its fingerprint too -- so moving or replacing an endpoint invalidates its entries.
+    The cache is local files named by a sha256, so the URL never leaves the machine.
     """
-    from memrank.errors import optional_import
+    if target.endpoint is None:
+        return "" if target.adapter == "anthropic" else f"{target.adapter}|{target.api_base}|"
+    return f"{target.adapter}|{target.api_base}|{target.fingerprint}|"
 
-    anthropic = optional_import("anthropic", None)
+
+def _api_key(name: str, keys: Mapping[str, str]) -> str:
+    """``name``'s value: given by the caller, else memrank's credential chokepoint."""
     from memrank import config
     from memrank.secrets import wallet
 
-    # Resolve through memrank's one credential chokepoint (environment -> wallet) rather
-    # than reading os.environ, and pass the key explicitly rather than letting the SDK read the
-    # environment itself -- otherwise a key held only in the wallet would never reach this client.
-    api_key = api_key or config.secret(JUDGE_SECRET)
+    # Resolve through memrank's one credential chokepoint (environment -> wallet) rather than
+    # reading os.environ, and pass the key explicitly rather than letting an SDK read the
+    # environment itself -- otherwise a key held only in the wallet would never reach the client.
+    api_key = keys.get(name) or config.secret(name)
     if not api_key:
         raise RuntimeError(
-            f"{JUDGE_SECRET} not found. Checked the environment and the wallet at "
-            f"{wallet.store_path()}. Set it with `memrank secrets set {JUDGE_SECRET}`, "
+            f"{name} not found. Checked the environment and the wallet at "
+            f"{wallet.store_path()}. Set it with `memrank secrets set {name}`, "
             f"`memrank secrets import-env`, or export it. A `.env` file is deliberately NOT "
             f"consulted for credentials.")
-    client = anthropic.Anthropic(api_key=api_key)
+    return api_key
+
+
+@dataclass(frozen=True)
+class _Route:
+    """Where one role's calls go: the cache prefix, the model sent, and the sender."""
+
+    prefix: str
+    model: str
+    send: Completer
+
+
+def _provider_send(cfg: JudgeConfig, role: str, target: ResolvedJudge,
+                   keys: Mapping[str, str]) -> Completer:
+    """A sender for ``target`` whose key is looked up on its first call, not before.
+
+    Deferred so a configuration whose reader is never called -- judging a recorded run -- does not
+    need the reader's key.
+    """
+    sampling = sampling_params(role, cfg)
+    built: list[Send] = []
+    lock = threading.Lock()
 
     def complete(model: str, system: str, user: str) -> str:
-        # No system prompt at all when there is none: the official readers are one user message.
-        msg = client.messages.create(
-            model=model, max_tokens=_MAX_TOKENS, **({"system": system} if system else {}),
-            messages=[{"role": "user", "content": user}],
-            **sampling_params(model, cfg),
-        )
-        return "".join(b.text for b in msg.content if isinstance(b, anthropic.types.TextBlock))
+        with lock:
+            if not built:
+                built.append(ADAPTERS[target.adapter](
+                    target, _api_key(target.key_name, keys), max_tokens=_MAX_TOKENS))
+        return built[0](model, system, user, sampling)
 
     return complete
+
+
+def _route(cfg: JudgeConfig, role: str, keys: Mapping[str, str]) -> _Route:
+    if cfg.completer is not None:
+        return _Route(f"custom:{cfg.completer_name}|", cfg.model(role), cfg.completer)
+    target = resolve(cfg.spec(role), cfg.endpoints)
+    return _Route(cache_prefix(target), target.model, _provider_send(cfg, role, target, keys))
 
 
 #: Anthropic's answers that mean "not this key": invalid (401), not allowed (403), and 400,
@@ -229,33 +278,36 @@ def anthropic_completer(cfg: JudgeConfig, *, api_key: str | None = None) -> Comp
 _KEY_REFUSALS = (400, 401, 403)
 
 
-def key_refusal(api_key: str) -> str | None:
-    """``None`` when Anthropic accepts ``api_key`` for judging, else Anthropic's reason.
+def key_refusal(target: ResolvedJudge, api_key: str) -> str | None:
+    """``None`` when ``target``'s provider accepts ``api_key`` for judging, else its reason.
 
-    One tiny request to the judge model through the judge's own completer, so a key is checked
-    exactly as judging will use it. Any other failure -- unreachable, overloaded -- is not an
-    answer about the key and is raised.
+    One tiny request to the judge's model through the judge's own adapter, so a key is checked
+    exactly as judging will use it -- the only check that finds an Anthropic account with no
+    credit, which is why a key pasted at the terminal gets it. Any other failure -- unreachable,
+    overloaded -- is not an answer about the key and is raised.
     """
-    from memrank.errors import optional_import
-
-    anthropic = optional_import("anthropic", None)
-    cfg = JudgeConfig()
-    complete = anthropic_completer(cfg, api_key=api_key)
+    # The judge role's sampling (none) is the same whatever the configuration names.
+    complete = _provider_send(JudgeConfig(), JUDGE, target, {target.key_name: api_key})
     try:
-        complete(cfg.judge_model, "Reply with the word OK.", "OK?")
-    except anthropic.APIStatusError as exc:
+        complete(target.model, "Reply with the word OK.", "OK?")
+    except ProviderError as exc:
         if exc.status_code not in _KEY_REFUSALS:
             raise
-        body = exc.body if isinstance(exc.body, dict) else {}
-        error = body.get("error")
-        return str(error.get("message")) if isinstance(error, dict) else exc.message
+        return exc.message
     return None
 
 
 def build_completer(cfg: JudgeConfig, *,
                     gate: Callable[[], RateLimitGate] | None = None,
+                    keys: Mapping[str, str] | None = None,
                     ) -> tuple[Completer, Callable[[], int]]:
-    """Compose cache(count(gate(base))); return (completer, billable-calls getter).
+    """Compose cache(count(gate(provider))) per role; return (completer, billable-calls getter).
+
+    The returned completer takes a ROLE (:data:`~memrank.judging.judge.READER` or
+    :data:`~memrank.judging.judge.JUDGE`) where a model would go, and sends it to that role's
+    provider and model. ``keys`` maps key names to values the caller already holds (``memrank
+    run`` judges with the organisation's saved key, decision 0037); any other key resolves on
+    this machine.
 
     The counter wraps only the egress, so it reflects actual API calls -- cache hits bypass it, which
     is what makes `judge_calls_made` a spend figure rather than a workload figure.
@@ -265,11 +317,42 @@ def build_completer(cfg: JudgeConfig, *,
     rejected call that cost nothing, so its retries must not each be counted as spend -- the counter
     counts logical calls, the gate absorbs the retries beneath it.
 
-    An injected `cfg.completer` (tests, fakes) is gated too. Excluding it would mean the composition
-    under test is not the composition that runs.
+    A ``cfg.completer`` (Level 2: your own code) is gated too. Excluding it would mean the
+    composition under test is not the composition that runs.
     """
-    base = gated_completer(cfg.completer or anthropic_completer(cfg), gate=gate)
-    counted, counter = counting_completer(base)
-    complete = cached_completer(counted, cache_dir=_cache_dir(),
-                                prompt_version=JUDGE_PROMPT_VERSION) if cfg.cache else counted
+    held = dict(keys or {})
+    routes = {role: _route(cfg, role, held) for role in (READER, JUDGE)}
+
+    def route_of(role: str) -> _Route:
+        if role not in routes:
+            raise ValueError(f"a judging completer is called with a role ({READER!r} or "
+                             f"{JUDGE!r}), got {role!r}")
+        return routes[role]
+
+    def egress(role: str, system: str, user: str) -> str:
+        route = route_of(role)
+        return route.send(route.model, system, user)
+
+    counted, counter = counting_completer(gated_completer(egress, gate=gate))
+
+    def uncached(role: str, system: str, user: str) -> str:
+        route_of(role)  # an unknown role is refused before it is counted
+        return counted(role, system, user)
+
+    if not cfg.cache:
+        return uncached, counter
+    cache_dir = _cache_dir()
+    cached = {role: cached_completer(_bound(counted, role), cache_dir=cache_dir,
+                                     prompt_version=JUDGE_PROMPT_VERSION, key_prefix=route.prefix)
+              for role, route in routes.items()}
+
+    def complete(role: str, system: str, user: str) -> str:
+        route = route_of(role)
+        return cached[role](route.model, system, user)
+
     return complete, counter
+
+
+def _bound(counted: Completer, role: str) -> Completer:
+    """``counted`` called for ``role`` whatever model the cache layer passes it."""
+    return lambda _model, system, user: counted(role, system, user)

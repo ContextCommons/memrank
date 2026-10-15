@@ -25,7 +25,6 @@ import typer
 
 from memrank.core import MemoryAdapter
 from memrank.evaluation.cell import AdapterFactory, _close_adapter
-from memrank.judging.client import JUDGE_MODEL_PREFIX
 from memrank.judging.judge import JudgeConfig
 from memrank.term import style
 
@@ -115,6 +114,10 @@ def _manifest_factories(refs: str, overrides: list[str], *,
 # is under test; the reader is who answers using it -- a different axis, so it is not a manifest field.
 _RUN_LEVEL_OVERRIDES: tuple[str, ...] = ("reader",)
 
+#: The deprecated submit path judges and reads only through Anthropic, so a reader override must
+#: name a Claude model; `memrank run` takes any provider:model instead.
+_ANTHROPIC_MODEL_PREFIX = "claude-"
+
 
 def _split_overrides(tokens: list[str]) -> tuple[list[str], dict[str, str]]:
     """Separate component overrides (for the manifest) from run-level ones (e.g. ``reader=``)."""
@@ -140,10 +143,10 @@ def _validate_reader(reader: str | None, *, judged: bool) -> None:
         raise typer.BadParameter(
             f"reader={reader!r} has no effect without --judge: the reader is the model that answers "
             "from retrieved memories, and nothing answers on an unjudged run.")
-    if not reader.startswith(JUDGE_MODEL_PREFIX):
+    if not reader.startswith(_ANTHROPIC_MODEL_PREFIX):
         raise typer.BadParameter(
             f"reader={reader!r} is not an Anthropic model. The judge runtime is Anthropic-backed, "
-            f"so the reader must start with {JUDGE_MODEL_PREFIX!r} "
+            f"so the reader must start with {_ANTHROPIC_MODEL_PREFIX!r} "
             "(e.g. claude-haiku-4-5-20251001).")
 
 
@@ -337,4 +340,4 @@ def _judge_cfg_or_refuse(*, enabled: bool, samples: int, no_cache: bool,
     # `reader` selects the model that ANSWERS from retrieved memories. Deliberately independent of
     # --model, which only picks a row in cost.py's price table: coupling them would silently move
     # $/query during a reader ablation, destroying the comparability that yardstick exists for.
-    return replace(cfg, answer_model=reader) if reader else cfg
+    return replace(cfg, reader=f"anthropic:{reader}") if reader else cfg

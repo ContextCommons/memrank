@@ -11,7 +11,7 @@ from memrank.loop import upload as up
 from memrank.loop.upload import Account, Hosted
 from memrank.service.judgings import judging_of
 from memrank.service.scoring import apply_verdicts
-from tests.service.test_scoring import PASS, recorded
+from tests.service.test_scoring import PASS, judged_by, recorded
 
 
 def _graded(**judge):
@@ -20,17 +20,25 @@ def _graded(**judge):
 
 
 def test_the_judging_carries_every_verdict_and_its_judge_name():
-    judging = judging_of(_graded(judge_model="m", judge_prompt_version="v"))
-    assert judging.key() == ("m", "v") and judging.score.mean == 0.75
+    judging = judging_of(_graded(judge=judged_by("m"), judge_prompt_version="v"))
+    assert judging.key() == {"judge": "anthropic:m", "judge_endpoint": None,
+                             "judge_prompt_version": "v"}
+    assert judging.score.mean == 0.75
     assert [(v.question_id, v.status) for v in judging.verdicts] == [
         ("q1", "judged"), ("q2", "judged"), ("q3", "judged"), ("q4", "failed")]
 
 
-@pytest.mark.parametrize("judge", [{"judge_model": None}, {"judge_model": "m"}],
+@pytest.mark.parametrize("judge", [{"judge": None}, {"judge": judged_by("m")}],
                          ids=["no-model", "no-prompt-version"])
 def test_a_result_no_judge_model_graded_is_not_a_judging(judge):
-    with pytest.raises(ValueError, match="judge model and prompt version"):
+    with pytest.raises(ValueError, match="judge and prompt version"):
         judging_of(_graded(**judge))
+
+
+def test_a_judging_keeps_each_verdict_probability():
+    graded = apply_verdicts(recorded(), {"q1": {**PASS, "probability": 0.8}}, judge_samples=1,
+                            judge=judged_by("m"), judge_prompt_version="v")
+    assert [v.probability for v in judging_of(graded).verdicts] == [0.8, None, None, None]
 
 
 def test_add_judging_posts_it_to_the_run(monkeypatch):
@@ -43,11 +51,11 @@ def test_add_judging_posts_it_to_the_run(monkeypatch):
 
     http = httpx.Client(base_url="http://api", transport=httpx.MockTransport(handle))
     hosted = Hosted(http=http, org="acme", account=Account("ada", "a@x", "Acme"))
-    graded = _graded(judge_model="m", judge_prompt_version="v")
+    graded = _graded(judge=judged_by("m"), judge_prompt_version="v")
     echoed: list[str] = []
     stored = up.add_judging(hosted, graded, echoed.append)
     assert stored["added"] is True
     [(call, body)] = sent
     assert call == f"POST /orgs/acme/runs/{graded.run_id}/judgings"
     assert body == judging_of(graded).model_dump(mode="json")
-    assert "Added the judging by m" in echoed[0]
+    assert "Added the judging by anthropic:m" in echoed[0]

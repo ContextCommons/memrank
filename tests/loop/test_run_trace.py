@@ -8,10 +8,9 @@ than escaping as an SDK exception the CLI would call a bug in memrank.
 
 from __future__ import annotations
 
-import anthropic
-import httpx
 import pytest
 
+from memrank.judging.providers import ProviderError
 from memrank.loop import run as loop_run
 from memrank.loop.explain import JudgeFailed
 from memrank.loop.run import run_agent
@@ -31,9 +30,7 @@ def only_the_check_answers(model: str, system: str, user: str) -> str:
 
 
 def refusing_judge(result, api_key, cfg, judged=lambda: None):
-    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-    response = httpx.Response(400, json=CREDIT, request=request)
-    raise anthropic.BadRequestError("Error code: 400", response=response, body=CREDIT)
+    raise ProviderError(CREDIT["error"]["message"], provider="anthropic", status_code=400)
 
 
 def test_a_refused_judge_ends_the_run_as_a_judge_failure_with_its_trace(

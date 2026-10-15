@@ -17,9 +17,11 @@ from memrank.connect.presets import preset_mapping
 from memrank.connect.probe import leak_probe
 from memrank.connect.spec import AgentSpec
 from memrank.judging.judge import JudgeConfig
+from memrank.judging.providers import ADAPTERS
 from memrank.loop import judge as loop_judge
 from memrank.loop import run as loop_run
 from memrank.loop.client import ServiceClient
+from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.judge_key import JudgeKeyMissing
 from memrank.loop.run import (
     Instruments,
@@ -41,6 +43,12 @@ from tests.service.conftest import FakeJudge
 LOCOMO = RunOptions(evaluation="locomo")
 
 
+def anthropic_answering(complete):
+    """The Anthropic adapter, standing in with ``complete``: the run's real provider path."""
+    return lambda target, api_key, *, max_tokens: (
+        lambda model, system, user, sampling: complete(model, system, user))
+
+
 class Org(OrgApi):
     """The organisation's side: its runs API, and the key each judging used."""
 
@@ -51,8 +59,8 @@ class Org(OrgApi):
     def judge(self, result: RunResult, api_key: str, cfg: JudgeConfig,
               judged=lambda: None) -> RunResult:
         self.keys.append(api_key)
-        return loop_judge.judge(result, api_key,
-                                replace(cfg, completer=FakeJudge(), cache=False), judged=judged)
+        return loop_judge.judge(result, api_key, replace(cfg, cache=False) if cfg else None,
+                                judged=judged)
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +68,7 @@ def org(monkeypatch) -> Org:
     """Judging with a fake judge that passes answers saying "blue", and a fake runs API."""
     fake = Org()
     monkeypatch.setattr(loop_run, "judge", fake.judge)
+    monkeypatch.setitem(ADAPTERS, "anthropic", anthropic_answering(FakeJudge()))
     return fake
 
 
@@ -80,7 +89,7 @@ def full_context(complete=reader) -> AgentSpec:
     fields = {**preset_mapping("openai-chat", {"model": "m"}), "base_url": "http://agent",
               "vars": {"model": "m"}}
     connector = HttpConnector(HttpSpec.model_validate(fields),
-                              transport=asgi_transport(agent_app(complete, "m", LOCOMO_READER)))
+                              transport=asgi_transport(agent_app(complete, "m", LOCOMO_READER, provider="anthropic", key_name="ANTHROPIC_API_KEY")))
     return AgentSpec(ref=AgentRef(name="full-context"), connector=connector, start=None,
                      description=None)
 
@@ -107,16 +116,18 @@ class Rows(HTMLParser):
         self.inside = self.inside and tag != "table"
 
 
-@pytest.mark.parametrize("options,model", [
-    (LOCOMO, "claude-haiku-4-5"),
-    (RunOptions(evaluation="locomo", judge_model="claude-sonnet-4-6"), "claude-sonnet-4-6"),
+@pytest.mark.parametrize("judge,model", [
+    (None, "claude-haiku-4-5"),
+    ("anthropic:claude-sonnet-4-6", "claude-sonnet-4-6"),
 ])
-def test_a_judged_run_names_its_judge_haiku_unless_told(engine, tmp_path, hosted, options,
-                                                        model):
+def test_a_judged_run_names_its_judge_haiku_unless_told(engine, tmp_path, org, judge, model):
     echoed: list[str] = []
+    options = LOCOMO if judge is None else RunOptions(evaluation="locomo", judge=judge)
+    hosted = org.hosted(spec=judge or DEFAULT_JUDGE)
     done = run_agent(engine, full_context(), options, tmp_path, hosted, quiet(echoed))
+    assert done.result.identity.judge == f"anthropic:{model}"
     assert done.result.identity.judge_model == model
-    assert f"memrank: Judge {model} with acme's key" in echoed
+    assert f"memrank: Judge anthropic:{model} with acme's ANTHROPIC_API_KEY" in echoed
 
 
 def test_the_reference_agent_passes_the_leak_probe():
@@ -215,7 +226,7 @@ def test_a_model_failure_reaches_the_runner_with_its_reason(engine, tmp_path, ho
     lead, detail = str(refused.value).split("\n", 1)
     assert "no question was asked" in lead
     assert detail.startswith("The agent's model call was refused by its provider "
-                             "(anthropic, 400) -- that is the model account, not memrank.")
+                             "(Anthropic, 400) -- that is the model account, not memrank.")
     assert "502" in detail and "credit balance is too low" in detail  # the payload, kept whole
 
 
@@ -249,7 +260,7 @@ def test_a_judged_run_without_the_orgs_key_is_refused_and_keeps_the_answers(engi
 
 
 def test_a_run_without_judging_is_uploaded_unscored(engine, tmp_path, org):
-    options = RunOptions(evaluation="locomo", judge=False)
+    options = RunOptions(evaluation="locomo", judge=None)
     done = run_agent(engine, full_context(), options, tmp_path, org.hosted(judge_key=None),
                      quiet([]))
     assert not done.result.judged and done.result.score.mean is None
@@ -265,7 +276,8 @@ def test_a_longmemeval_run_gets_past_the_leak_probe(engine, tmp_path, hosted):
 
     fields = {**preset_mapping("openai-chat", {"model": "m"}), "base_url": "http://agent",
               "vars": {"model": "m"}}
-    app = agent_app(dated_reader, "m", LONGMEMEVAL_READER)
+    app = agent_app(dated_reader, "m", LONGMEMEVAL_READER, provider="anthropic",
+                    key_name="ANTHROPIC_API_KEY")
     connector = HttpConnector(HttpSpec.model_validate(fields), transport=asgi_transport(app))
     agent = AgentSpec(ref=AgentRef(name="full-context"), connector=connector, start=None,
                       description=None)

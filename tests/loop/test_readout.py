@@ -23,7 +23,7 @@ import pytest
 from memrank.loop import readout
 from memrank.service.protocol import Interval, QuestionOutcome
 from memrank.service.scoring import apply_verdicts
-from tests.service.test_scoring import FAIL, PASS, recorded
+from tests.service.test_scoring import FAIL, PASS, judged_by, recorded
 
 
 def _question(**over: object) -> QuestionOutcome:
@@ -109,7 +109,7 @@ def test_percentages_round_half_up_as_the_run_page_does(value, digits, text):
 
 def _judged():
     return apply_verdicts(recorded(), {"q1": PASS, "q2": FAIL, "q3": PASS},
-                          judge_model="j", judge_samples=1)
+                          judge=judged_by("j"), judge_samples=1)
 
 
 def test_the_headline_counts_correct_answers_when_judged_right_or_wrong():

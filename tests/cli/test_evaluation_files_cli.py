@@ -84,7 +84,7 @@ def test_only_an_evaluation_the_model_grades_asks_for_the_key(world, capsys,  # 
     asked: list[bool] = []
 
     def connect(*, judge, ask=None, rerun=None):
-        asked.append(judge)
+        asked.append(judge is not None)  # the judge spec, or None when no grader calls it
         raise upload.LoginRequired("stop here")
 
     world.setattr(upload, "connect", connect)

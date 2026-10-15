@@ -34,10 +34,11 @@ from memrank.connect.process import started
 from memrank.connect.spec import AgentSpec
 from memrank.errors import MemrankError
 from memrank.judging.judge import JudgeConfig
+from memrank.judging.providers import resolve as resolve_judge
 from memrank.loop import header, lanes
 from memrank.loop.client import retry_unreached
 from memrank.loop.explain import cause, explained, judge_failure
-from memrank.loop.judge import DEFAULT_JUDGE_MODEL, judge, needs_key
+from memrank.loop.judge import DEFAULT_JUDGE, judge, needs_key
 from memrank.loop.judge_key import missing_key
 from memrank.loop.live import LiveRun
 from memrank.loop.output import RESULT_FILE, write_outputs
@@ -80,9 +81,8 @@ class RunOptions:
     resume: str | None = None
     #: With ``resume``: run every case whose reset or feed failed again, from a fresh reset.
     retry_failed: bool = False
-    judge: bool = True
-    #: The Anthropic model that grades the answers when ``judge`` is on.
-    judge_model: str = DEFAULT_JUDGE_MODEL
+    #: The ``provider:model`` that grades the answers; ``None`` records them unjudged.
+    judge: str | None = DEFAULT_JUDGE
     #: How many cases run side by side (:mod:`memrank.loop.lanes`); one is sequential.
     concurrency: int = lanes.DEFAULT_CONCURRENCY
 
@@ -248,7 +248,7 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
             trace.stage = Stage.STEPS
             _drive(evaluator, agent, run_id, tools, options.concurrency, live)
         tools.echo(style.prefixed("All steps done"))
-        result = _finished(evaluator, run_id, folder, hosted, tools, live, options.judge_model)
+        result = _finished(evaluator, run_id, folder, hosted, tools, live, options.judge)
         trace.stage, trace.judged = Stage.UPLOAD, result
         url = _upload(hosted, result, folder, agent, tools)
     except BaseException as exc:
@@ -289,7 +289,7 @@ def _online(evaluator: Evaluator, agent: AgentSpec, hosted: Hosted, options: Run
     run_id, folder = tools.trace.run_id, tools.trace.folder
     assert run_id is not None and folder is not None  # set by run_agent before it comes here
     status = evaluator.status(run_id)
-    for line in header.opening(hosted, status, agent.ref.name, options.judge_model, folder):
+    for line in header.opening(hosted, status, agent.ref.name, options.judge, folder):
         tools.echo(line)
     live = LiveRun(hosted=hosted, run_id=run_id, agent=agent.ref.name,
                    evaluation=status.evaluation, status=lambda: evaluator.status(run_id),
@@ -329,8 +329,16 @@ def _saved(folder: Path) -> RunResult | None:
     return saved if saved.judged or not saved.identity.judge_requested else None
 
 
+def _judge_config(spec: str | None, hosted: Hosted) -> JudgeConfig | None:
+    """The configuration the run judges with: its spec, and the endpoint it resolved to."""
+    if spec is None or hosted.judge is None:
+        return None  # no grader calls the model, so no judge is configured
+    endpoint = hosted.judge.endpoint
+    return JudgeConfig(judge=spec, endpoints=(endpoint,) if endpoint else ())
+
+
 def _finished(evaluator: Evaluator, run_id: str, folder: Path, hosted: Hosted,
-              tools: Instruments, live: LiveRun, judge_model: str) -> RunResult:
+              tools: Instruments, live: LiveRun, spec: str | None) -> RunResult:
     """The run's final result: the saved one on a resume, else recorded and judged here."""
     saved = _saved(folder)
     if saved is not None:
@@ -341,8 +349,9 @@ def _finished(evaluator: Evaluator, run_id: str, folder: Path, hosted: Hosted,
     if not recorded.identity.judge_requested:
         return recorded
     keyed = needs_key(recorded)
-    if keyed and hosted.judge_key is None:
-        raise missing_key(hosted.org)
+    cfg = _judge_config(spec, hosted)
+    if keyed and (hosted.judge_key is None or cfg is None):
+        raise missing_key(hosted.org, hosted.judge or resolve_judge(spec or DEFAULT_JUDGE))
     answers = recorded.questions - recorded.failed
     # The judge and whose key it uses were named before the first step (:mod:`header`).
     tools.echo(style.prefixed(f"Judging {answers} answers ..." if keyed
@@ -350,10 +359,9 @@ def _finished(evaluator: Evaluator, run_id: str, folder: Path, hosted: Hosted,
     tools.trace.stage = Stage.JUDGING
     live.judging(answers)
     try:
-        judged = judge(recorded, hosted.judge_key, JudgeConfig(judge_model=judge_model),
-                       judged=live.one_judged)
-    except Exception as exc:  # noqa: BLE001 - re-raised: named when it is Anthropic's side
-        failure = judge_failure(exc)
+        judged = judge(recorded, hosted.judge_key, cfg, judged=live.one_judged)
+    except Exception as exc:  # noqa: BLE001 - re-raised: named when it is the provider's side
+        failure = judge_failure(exc, hosted.judge) if hosted.judge else None
         if failure is None:
             raise
         raise failure from exc
@@ -365,5 +373,6 @@ def _create(evaluator: Evaluator, agent: AgentSpec, options: RunOptions) -> str:
     """A new run's id; its size is said with the rest of its opening lines (:mod:`header`)."""
     created = evaluator.create(RunCreate(evaluation=options.evaluation, agent=agent.ref,
                                          cases=options.cases, questions=options.questions,
-                                         seed=options.seed, judge=options.judge))
+                                         seed=options.seed,
+                                         judge=options.judge is not None))
     return created.run_id

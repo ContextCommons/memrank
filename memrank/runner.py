@@ -53,6 +53,7 @@ from memrank.cli.agents import run as _run_cmd
 from memrank.cli.agents import serve as _serve_cmd
 from memrank.cli.auth import app as auth_app
 from memrank.cli.config import config_app
+from memrank.cli.endpoints import endpoints_app
 from memrank.cli.evals import evals_app
 from memrank.cli.monitor import logs as _logs_cmd
 from memrank.cli.retired import refuse_retired_flags, register_retired
@@ -287,6 +288,7 @@ app.command("serve")(_serve_cmd)
 app.add_typer(agents_app, name="agents")
 app.add_typer(auth_app, name="auth")
 app.add_typer(config_app, name="config")
+app.add_typer(endpoints_app, name="endpoints")
 app.add_typer(evals_app, name="evals")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")

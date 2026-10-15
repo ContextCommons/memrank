@@ -13,9 +13,9 @@
 # permissions and limitations under the License.
 """Reference agents memrank ships, run locally, as baselines to compare an agent against."""
 
-#: How a reference agent reports a failed model call (``detail`` of its 502): the provider it
-#: called, the key it called it with, and whether the provider answered at all. The runner reads
-#: this to say whose side the failure is on (:mod:`memrank.loop.explain`), so it lives here,
-#: importable without the web framework the agents themselves run on.
-PROVIDER, KEY_NAME = "anthropic", "ANTHROPIC_API_KEY"
+#: How a reference agent reports a failed model call (``detail`` of its 502): whether the
+#: provider answered at all, alongside the provider it called and the key it called it with -- the
+#: ones its ``--model`` spec resolved to. The runner reads this to say whose side the failure is on
+#: (:mod:`memrank.loop.explain`), so it lives here, importable without the web framework the agents
+#: themselves run on.
 PROVIDER_REFUSED, PROVIDER_FAILED = "provider_refused", "provider_failed"

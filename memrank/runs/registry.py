@@ -154,6 +154,8 @@ class RunInfo:
     headline: float | None = None
     headline_kind: str = headline_lib.WITHHELD
     headline_coverage: float | None = None
+    #: Who graded the cell (``JudgeIdentity.label``), or None when it was not judged.
+    judge: str | None = None
 
 
 def _read_info(run_id: str, cell_path: Path) -> RunInfo | None:
@@ -183,6 +185,7 @@ def _read_info(run_id: str, cell_path: Path) -> RunInfo | None:
         composite_rankable=data.get("composite_rankable") is not False,
         timestamp=receipt.get("started_at") or run_id,
         headline=head.value, headline_kind=head.kind, headline_coverage=head.coverage,
+        judge=headline_lib.cell_judge(data),
     )
 
 

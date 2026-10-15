@@ -112,7 +112,7 @@ def add_judging(http, org: str, run_id: str, judging: dict[str, Any]) -> dict[st
     """Add a judging of a finished agent run's recorded answers, beside its earlier ones.
 
     Idempotent: the same judging sent again answers ``added: false``. A different judging under
-    the same judge model and prompt version is refused (``judging_exists``), never replaced.
+    the same judge, endpoint and prompt version is refused (``judging_exists``), never replaced.
     """
     response = http.post(f"/orgs/{org}/runs/{run_id}/judgings", json=judging)
     if response.status_code != 200:

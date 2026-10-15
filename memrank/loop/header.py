@@ -33,18 +33,22 @@ from memrank.term.style import bold, dim, identity, link, prefixed
 _SEP = " \u00b7 "
 
 
-def opening(hosted: Hosted, status: RunStatus, agent: str, judge_model: str,
+def opening(hosted: Hosted, status: RunStatus, agent: str, judge: str | None,
             folder: Path) -> list[str]:
-    """The lines before the run registers online: account, organisation, run, judge, folder."""
+    """The lines before the run registers online: account, organisation, run, judge, folder.
+
+    The judge is named as typed (``router:bedrock/claude-haiku-4-5``), as the record names it.
+    """
     account = hosted.account
     run = _SEP.join((f"Run {identity(status.run_id)}", status.evaluation, f"agent {bold(agent)}",
                      f"{status.cases} cases, {status.questions} questions"))
     lines = [f"Signed in as {identity(account.login)} {dim(f'<{account.email}>')}",
              f"Recording to org {identity(hosted.org)} {dim(f'({account.org_name})')}",
              run]
-    if status.judge and hosted.judge_key is not None:
-        whose = f"with {hosted.org}'s key"
-        lines.append(f"Judge {bold(judge_model)} {dim(whose)}")
+    if status.judge and judge is not None and hosted.judge is not None:
+        # The key by name, so a run judged through an endpoint says whose key it spends.
+        whose = f"with {hosted.org}'s {hosted.judge.key_name}"
+        lines.append(f"Judge {bold(judge)} {dim(whose)}")
     lines.append(f"Saving locally to {dim(f'{folder}/')}")
     return [prefixed(line) for line in lines]
 

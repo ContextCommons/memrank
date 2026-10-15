@@ -245,7 +245,7 @@ def test_judging_skips_a_failed_unit_instead_of_asserting_on_its_missing_rows():
     from memrank.judging.judge import JudgeConfig
     from tests.fakes import make_fake_completer
 
-    cfg = JudgeConfig(no_context_control=False, completer=make_fake_completer())
+    cfg = JudgeConfig(no_context_control=False, completer_name="fake", completer=make_fake_completer())
     cell = _run(_FailingAdapter, benchmark=_JudgedMultiUnitBenchmark(n_units=3), judge=cfg)
 
     assert cell["units_failed"] == 1

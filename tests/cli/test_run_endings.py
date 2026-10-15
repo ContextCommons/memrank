@@ -23,8 +23,10 @@ from memrank.api_client import ApiUnreachable
 from memrank.connect.base import AgentError, AgentUnreachable
 from memrank.connect.probe import LeakDetected
 from memrank.definitions.commands import CommandFailed
+from memrank.judging.providers import ProviderError, resolve
 from memrank.loop import run as loop_run
 from memrank.loop.explain import judge_failure
+from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.run import Finished, ProbeIncomplete, RunAborted, UploadIncomplete
 from memrank.loop.trace import Stage
 from memrank.placement import run_api_client
@@ -32,7 +34,7 @@ from memrank.service.protocol import RunResult
 from memrank.service.scoring import apply_verdicts
 from memrank.term import outcome, style
 from tests.cli.test_run_missing_steps import ORG, api, world  # noqa: F401 - the fixture
-from tests.service.test_scoring import PASS, recorded
+from tests.service.test_scoring import PASS, judged_by, recorded
 
 RUN = "20260927-213555__locomo__76506d"
 PAGE = f"https://memrank.test/{ORG}/runs/{RUN}"
@@ -45,14 +47,16 @@ CREDIT = {"type": "error", "error": {"type": "invalid_request_error",
 MARKS = {"done": f"{outcome.CHECK} ", "action": "! ", "broken": "x "}
 
 
+#: The judge every case here judged with: the default.
+TARGET = resolve(DEFAULT_JUDGE)
+
+
 def refused(status: int, body: dict | None = None) -> BaseException:
-    """What judging raises when Anthropic refuses: the SDK's own error, as the loop names it."""
-    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    """What judging raises when Anthropic refuses: the adapter's error, as the loop names it."""
     body = body or {"type": "error", "error": {"type": "error", "message": f"refused {status}"}}
-    response = httpx.Response(status, json=body, request=request,
-                              headers={"request-id": "req_011CfUfagiGA7SyNv8YWc3BW"})
-    sdk = anthropic.APIStatusError(f"Error code: {status}", response=response, body=body)
-    failure = judge_failure(sdk)
+    error = ProviderError(body["error"]["message"], provider="anthropic", status_code=status,
+                          request_id="req_011CfUfagiGA7SyNv8YWc3BW")
+    failure = judge_failure(error, TARGET)
     assert failure is not None
     return failure
 
@@ -66,7 +70,7 @@ def unanswered() -> BaseException:
         except TypeError as inner:
             raise anthropic.APIConnectionError(request=request) from inner
     except anthropic.APIConnectionError as sdk:
-        failure = judge_failure(sdk)
+        failure = judge_failure(sdk, TARGET)
     assert failure is not None
     return failure
 
@@ -83,7 +87,7 @@ def answered() -> RunResult:
 def judged() -> RunResult:
     verdicts = {q.question_id: PASS for case in answered().cases for q in case.questions
                 if q.status == "not_judged"}
-    return apply_verdicts(answered(), verdicts, judge_model="claude-judge", judge_samples=1)
+    return apply_verdicts(answered(), verdicts, judge=judged_by("claude-judge"), judge_samples=1)
 
 
 def stops(exc: BaseException, stage: Stage = Stage.STEPS, *, run: bool = True,

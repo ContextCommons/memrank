@@ -44,6 +44,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from memrank.service.protocol import recorded_judge_label
+
 #: Judged coverage below this is real but not comparable -- see rule 1.
 MIN_RANKABLE_COVERAGE = 0.5
 
@@ -126,3 +128,13 @@ def cell_headline(cell: Mapping[str, Any]) -> Headline:
         return Headline(value=composite, kind=cell.get("quality_metric") or DEFAULT_QUALITY_METRIC,
                         rankable=True, coverage=None)
     return Headline(value=None, kind=WITHHELD, rankable=False, coverage=None)
+
+
+def cell_judge(cell: Mapping[str, Any]) -> str | None:
+    """The judge that graded a cell, as every surface shows it, or None when it was not judged.
+
+    Read from the receipt's ``config``, where the judge is recorded flat; a receipt from before
+    providers names a bare ``judge_model`` and reads as ``unknown:``, never as a provider.
+    """
+    config = (cell.get("receipt") or {}).get("config") or {}
+    return recorded_judge_label(config) if config.get("judge_enabled") else None

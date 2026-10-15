@@ -17,8 +17,9 @@ import pytest
 
 from memrank import runner, settings
 from memrank.cli import agents as agents_cli
-from memrank.judging import client as judging_client
+from memrank.judging.providers import check as judge_check
 from memrank.loop import run as loop_run
+from memrank.loop import upload as loop_upload
 from memrank.loop.run import Finished
 from memrank.placement import run_api_client
 from memrank.placement.run_api_client import RunApiError
@@ -58,6 +59,8 @@ def world(monkeypatch, tmp_path):
                         lambda key: ORG if key == "defaults.org" else real_get(key))
     monkeypatch.setattr(run_api_client, "authenticated_client", lambda: api())
     monkeypatch.setattr(agents_cli, "_interactive", lambda: False)
+    # The judge's model check calls the provider; every key here reaches the model.
+    monkeypatch.setattr(loop_upload, "model_refusal", lambda target, key, **_: None)
     return monkeypatch
 
 
@@ -161,7 +164,7 @@ def test_a_key_typed_at_the_prompt_is_saved_and_the_run_goes_on(world, capsys, t
                   lambda: api(resolved={}, saved=saved))
     world.setattr(agents_cli, "_interactive", lambda: True)
     world.setattr(agents_cli, "_read_key", lambda name: "sk-typed")
-    world.setattr(judging_client, "key_refusal", lambda key: None)
+    world.setattr(judge_check, "pasted_key_refusal", lambda target, key: None)
     used: list[str | None] = []
 
     def run_agent(evaluator, spec, options, output_root, hosted, tools):

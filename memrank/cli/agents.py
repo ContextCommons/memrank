@@ -38,7 +38,7 @@ import typer
 from memrank import config, errors
 from memrank.errors import ActionRequired, Concluded, MemrankError, optional_import
 from memrank.judging.judge import JudgeConfig
-from memrank.loop.judge import DEFAULT_JUDGE_MODEL
+from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.lanes import DEFAULT_CONCURRENCY
 from memrank.outcome import Step
 from memrank.term import style
@@ -65,12 +65,13 @@ def run(
     questions: int | None = typer.Option(None, "--questions", min=1,
                                          help="Sample at most this many questions per case"),
     seed: int = typer.Option(0, "--seed", help="Seed for case and question sampling"),
-    judge: bool = typer.Option(True, "--judge/--no-judge",
-                               help="--no-judge records answers and reports NO quality score; "
-                                    "judging otherwise uses your organisation's saved "
-                                    "ANTHROPIC_API_KEY"),
-    judge_model: str = typer.Option(DEFAULT_JUDGE_MODEL, "--judge-model",
-                                    help="The Anthropic model that judges the answers"),
+    judge: str = typer.Option(DEFAULT_JUDGE, "--judge", metavar="SPEC",
+                              help="Who judges the answers, as provider:model: anthropic:..., "
+                                   "openai:..., or <endpoint>:<model> for one of your "
+                                   "organisation's endpoints (`memrank endpoints ls`). Judging "
+                                   "uses your organisation's saved key for it"),
+    no_judge: bool = typer.Option(False, "--no-judge",
+                                  help="Record the answers and report NO quality score"),
     concurrency: int = typer.Option(DEFAULT_CONCURRENCY, "--concurrency", "-j", min=1,
                                     help="Run this many cases at once; each case's steps "
                                          "stay in order. 1 runs them one at a time"),
@@ -90,7 +91,6 @@ def run(
                                             "instead of evaluating in this process"),
 ) -> None:
     """Evaluate an agent on a shipped evaluation or your own. Each run writes one folder."""
-    from memrank.judging.client import JUDGE_MODEL_PREFIX
     from memrank.loop.ending import Invocation, ended
     from memrank.loop.report import done
     from memrank.loop.run import RunOptions
@@ -103,12 +103,10 @@ def run(
     if retry_failed and resume is None:
         raise typer.BadParameter("--retry-failed retries the failed cases of a run you "
                                  "--resume; a new run has none")
-    if not judge_model.startswith(JUDGE_MODEL_PREFIX):
-        raise typer.BadParameter(f"the judge is an Anthropic model; --judge-model must start "
-                                 f"with {JUDGE_MODEL_PREFIX!r}")
+    _check_spec(judge, "--judge")
     options = RunOptions(evaluation=_evaluation_ref(benchmark), cases=cases, questions=questions,
-                         seed=seed, resume=resume, retry_failed=retry_failed, judge=judge,
-                         judge_model=judge_model, concurrency=concurrency)
+                         seed=seed, resume=resume, retry_failed=retry_failed,
+                         judge=None if no_judge else judge, concurrency=concurrency)
     trace = RunTrace()
     call = Invocation(command=_command(ctx), resume=lambda run_id: _resume_command(ctx, run_id))
     try:
@@ -119,6 +117,19 @@ def run(
         ending, code = ended(exc, trace, call)
         raise Concluded(ending, code) from exc
     outcome.render(done(finished.result, trace, finished.url, finished.org))
+
+
+def _check_spec(spec: str, flag: str) -> None:
+    """Refuse a malformed ``provider:model`` before anything runs; an endpoint name is checked
+    against the organisation once signed in (:mod:`memrank.loop.judge_target`)."""
+    from memrank.judging.providers import BUILTINS, RESERVED_NAMES, parse_spec, resolve
+
+    try:
+        provider, _ = parse_spec(spec)
+        if provider in RESERVED_NAMES and provider not in BUILTINS:
+            resolve(spec)  # refuses the reserved name in its own words
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint=flag) from exc
 
 
 def _evaluate(ctx: typer.Context, call, trace, agent: str, options, output_dir: Path,  # noqa: ANN001
@@ -138,10 +149,11 @@ def _evaluate(ctx: typer.Context, call, trace, agent: str, options, output_dir: 
     evaluator = _evaluator(service, output_dir)
     if options.resume is not None and service is None:
         request = _require_same_agent(output_dir, options.resume, spec.ref.spec_sha256)
-        options.judge = request.judge
+        # Whether it is judged was settled when it started; the judge is the one named now.
+        options.judge = (options.judge or DEFAULT_JUDGE) if request.judge else None
         options.evaluation = request.evaluation  # what `{evaluation}` starts the agent with
         needs_model = _needs_model(request.evaluation, request.seed)
-    hosted = connect(judge=options.judge and needs_model,
+    hosted = connect(judge=options.judge if needs_model else None,
                      ask=_key_prompt() if _interactive() else None,
                      rerun=lambda: _no_judge_rerun(ctx))
     call.org = hosted.org
@@ -183,10 +195,10 @@ def _read_key(name: str) -> str:
 
 
 def _key_prompt():  # noqa: ANN202 - the loop's type, imported lazily like the rest of it
-    from memrank.judging.client import key_refusal
+    from memrank.judging.providers.check import pasted_key_refusal
     from memrank.loop.judge_key import KeyPrompt
 
-    return KeyPrompt(read=_read_key, verify=key_refusal, echo=style.say)
+    return KeyPrompt(read=_read_key, verify=pasted_key_refusal, echo=style.say)
 
 
 def _given(ctx: typer.Context, skip: tuple[str, ...] = ()) -> list[str]:
@@ -219,11 +231,11 @@ def _command(ctx: typer.Context) -> str:
 
 def _no_judge_rerun(ctx: typer.Context) -> str:
     """The user's own ``memrank run`` arguments, with ``--no-judge`` in place of judging."""
-    return shlex.join([*_given(ctx, skip=("judge",)), "--no-judge"])
+    return shlex.join([*_given(ctx, skip=("judge", "no_judge")), "--no-judge"])
 
 
 #: What a resumed run is given again besides its id: the rest is saved with the run.
-_RESUME_KEEPS = ("agent", "output_dir", "service", "concurrency", "judge_model")
+_RESUME_KEEPS = ("agent", "output_dir", "service", "concurrency", "judge")
 
 
 def _resume_command(ctx: typer.Context, run_id: str) -> str:
@@ -297,8 +309,10 @@ def agents_ls() -> None:
 @agents_app.command("serve")
 def agents_serve(
     kind: str = typer.Argument(..., help="Which reference agent: full-context"),
-    model: str = typer.Option(..., "--model", help="Anthropic model that answers, e.g. "
-                                                    "claude-haiku-4-5"),
+    model: str = typer.Option(..., "--model", metavar="SPEC",
+                              help="Who answers, as provider:model, e.g. "
+                                   "anthropic:claude-haiku-4-5, or <endpoint>:<model> for one of "
+                                   "your organisation's endpoints"),
     evaluation: str = typer.Option(..., "--evaluation",
                                    help="The eval ref the agent answers (e.g. beam:100k); its "
                                         "official reader prompt is the one it answers with"),
@@ -306,24 +320,52 @@ def agents_serve(
     port: int = typer.Option(DEFAULT_AGENT_PORT, "--port"),
 ) -> None:
     """Serve a reference agent on the OpenAI Chat Completions API. `memrank run` starts it."""
-    from memrank.judging.client import JUDGE_MODEL_PREFIX, JUDGE_SECRET, build_completer
+    from memrank.judging.client import build_completer
+    from memrank.judging.providers import provider_label
 
     if kind not in REFERENCE_AGENTS:
         raise typer.BadParameter(f"unknown reference agent {kind!r}; choose {REFERENCE_AGENTS}")
-    if not model.startswith(JUDGE_MODEL_PREFIX):
-        raise typer.BadParameter(f"the reference agent answers through memrank's Anthropic "
-                                 f"reader; --model must start with {JUDGE_MODEL_PREFIX!r}")
-    if not config.secret(JUDGE_SECRET):
-        raise MemrankError(f"the {kind} agent answers with Anthropic: export {JUDGE_SECRET}")
+    _check_spec(model, "--model")
+    target, endpoints = _reader(model)
+    if not config.secret(target.key_name):
+        raise MemrankError(f"the {kind} agent answers with {provider_label(target.provider)}: "
+                           f"export {target.key_name}, or `memrank secrets set "
+                           f"{target.key_name}`")
     uvicorn = optional_import("uvicorn", "service")
     from memrank.benchmarks.answer_prompts import answer_prompt_for
     from memrank.reference.full_context import create_app
 
     prompt = answer_prompt_for(evaluation)
-    complete, _ = build_completer(JudgeConfig(answer_model=model, cache=False))
+    complete, _ = build_completer(JudgeConfig(reader=model, endpoints=endpoints, cache=False))
     style.note(f"{kind} agent ({model}) on http://{host}:{port}/v1/chat/completions")
     # Printed to the agent log `memrank run` keeps in the run folder: which reader answered.
     style.note(f"{kind} agent answers {evaluation} with answer prompt {prompt.identity} "
                f"({prompt.source})")
-    uvicorn.run(create_app(complete, model, prompt), host=host, port=port,
-                log_level="warning")
+    uvicorn.run(create_app(complete, model, prompt, provider=target.provider,
+                           key_name=target.key_name),
+                host=host, port=port, log_level="warning")
+
+
+def _reader(spec: str):  # noqa: ANN202 - the providers' types, imported lazily
+    """The reader ``spec`` resolves to, and the endpoint it names (read from the organisation).
+
+    A built-in provider needs nothing more. An endpoint name is resolved through the signed-in
+    CLI against the default organisation, as ``memrank run`` resolves a judge; its key is read on
+    this machine, as every shipped agent's is.
+    """
+    from memrank import settings
+    from memrank.judging.providers import BUILTINS, parse_spec, resolve
+    from memrank.loop.judge_target import resolve_run_judge
+    from memrank.placement import run_api_client
+
+    provider, _ = parse_spec(spec)
+    if provider in BUILTINS:
+        return resolve(spec), ()
+    org = settings.get("defaults.org")
+    if not org:
+        raise ActionRequired(f"--model {spec} names an endpoint, which is read from your "
+                             "organisation; no organisation is set.",
+                             "memrank config set defaults.org <slug>")
+    with run_api_client.authenticated_client() as http:
+        target, _ = resolve_run_judge(http, org, spec)
+    return target, (target.endpoint,) if target.endpoint else ()

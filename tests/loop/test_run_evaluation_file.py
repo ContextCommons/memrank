@@ -14,6 +14,7 @@ import pytest
 
 from memrank.connect.spec import AgentSpec
 from memrank.connect.template import transcript
+from memrank.judging.providers import ADAPTERS
 from memrank.loop import judge as loop_judge
 from memrank.loop import run as loop_run
 from memrank.loop.judge_key import JudgeKeyMissing
@@ -68,10 +69,12 @@ def judged(monkeypatch) -> list[str | None]:
 
     def fake(result, api_key, cfg, judged=lambda: None):
         keys.append(api_key)
-        cfg = replace(cfg, completer=lambda model, system, user: PASS, cache=False)
-        return loop_judge.judge(result, api_key, cfg, judged=judged)
+        return loop_judge.judge(result, api_key, replace(cfg, cache=False) if cfg else None,
+                                judged=judged)
 
     monkeypatch.setattr(loop_run, "judge", fake)
+    monkeypatch.setitem(ADAPTERS, "anthropic", lambda target, api_key, *, max_tokens: (
+        lambda model, system, user, sampling: PASS))
     return keys
 
 

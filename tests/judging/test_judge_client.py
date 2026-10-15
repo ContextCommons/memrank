@@ -4,7 +4,9 @@ from memrank.judging.client import (
     cached_completer,
     sampling_params,
 )
-from memrank.judging.judge import JudgeConfig
+from memrank.judging.judge import JUDGE, READER, JudgeConfig
+from memrank.judging.providers import resolve
+from memrank.judging.providers.anthropic import anthropic_send
 
 
 def _counting_inner():
@@ -41,11 +43,11 @@ def test_every_call_goes_out_and_is_counted():
     left to check is that the counter reports every billable call, since it becomes the receipt's
     `judge_calls_made`."""
     inner, _ = _counting_inner()
-    cfg = JudgeConfig(completer=inner, cache=False)
+    cfg = JudgeConfig(completer_name="fake", completer=inner, cache=False)
     complete, counter = build_completer(cfg)
-    complete("m", "s", "u1")
-    complete("m", "s", "u2")
-    complete("m", "s", "u3")
+    complete(JUDGE, "s", "u1")
+    complete(JUDGE, "s", "u2")
+    complete(READER, "s", "u3")
     assert counter() == 3
 
 
@@ -54,31 +56,37 @@ def test_answer_calls_are_pinned_and_judge_calls_are_not():
     the judge model rejects the parameter, so its calls must carry NO sampling kwargs -- sending
     one anyway would 400 every judge call at the API."""
     cfg = JudgeConfig()
-    assert sampling_params(cfg.answer_model, cfg) == {"temperature": 0.0}
-    assert sampling_params(cfg.judge_model, cfg) == {}
+    assert sampling_params(READER, cfg) == {"temperature": 0.0}
+    assert sampling_params(JUDGE, cfg) == {}
+
+
+def test_the_role_decides_sampling_even_when_reader_and_judge_share_a_model():
+    """It used to be model equality, which gave a judge sharing the reader's model a temperature."""
+    same = "anthropic:claude-haiku-4-5"
+    cfg = JudgeConfig(reader=same, judge=same)
+    assert sampling_params(READER, cfg) == {"temperature": 0.0}
+    assert sampling_params(JUDGE, cfg) == {}
 
 
 def test_cache_hits_bypass_cap_and_counter(tmp_path, monkeypatch):
     monkeypatch.setenv("MEMRANK_CACHE_DIR", str(tmp_path))
     inner, calls = _counting_inner()
     # First run populates the cache (cap high enough).
-    cfg1 = JudgeConfig(completer=inner, cache=True)
+    cfg1 = JudgeConfig(completer_name="fake", completer=inner, cache=True)
     c1, n1 = build_completer(cfg1)
-    c1("m", "s", "u1")
+    c1(JUDGE, "s", "u1")
     assert n1() == 1 and calls["n"] == 1
     # Second run with cap=1: the single call is a cache hit -> no egress, no cap trip.
-    cfg2 = JudgeConfig(completer=inner, cache=True)
+    cfg2 = JudgeConfig(completer_name="fake", completer=inner, cache=True)
     c2, n2 = build_completer(cfg2)
-    c2("m", "s", "u1")  # cache hit
-    c2("m", "s", "u1")  # cache hit again -- would exceed cap=1 if hits counted
+    c2(JUDGE, "s", "u1")  # cache hit
+    c2(JUDGE, "s", "u1")  # cache hit again -- would exceed cap=1 if hits counted
     assert n2() == 0 and calls["n"] == 1  # no new egress
 
 
-def test_the_anthropic_completer_sends_no_system_prompt_when_there_is_none(monkeypatch):
+def test_the_anthropic_adapter_sends_no_system_prompt_when_there_is_none(monkeypatch):
     """The official readers are one user message; an empty system field is not sent at all."""
     import anthropic
-
-    from memrank.judging.client import anthropic_completer
 
     sent: list[dict] = []
 
@@ -92,7 +100,7 @@ def test_the_anthropic_completer_sends_no_system_prompt_when_there_is_none(monke
             self.messages = Messages()
 
     monkeypatch.setattr(anthropic, "Anthropic", Client)
-    complete = anthropic_completer(JudgeConfig(), api_key="k")
-    complete("claude-haiku-4-5", "", "the whole prompt")
-    complete("claude-haiku-4-5", "judge", "u")
+    send = anthropic_send(resolve("anthropic:claude-haiku-4-5"), "k", max_tokens=512)
+    send("claude-haiku-4-5", "", "the whole prompt", {})
+    send("claude-haiku-4-5", "judge", "u", {})
     assert "system" not in sent[0] and sent[1]["system"] == "judge"

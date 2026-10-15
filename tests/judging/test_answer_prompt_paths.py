@@ -51,7 +51,7 @@ def test_the_in_process_harness_answers_with_the_benchmark_s_prompt_and_records_
     recorder = Recorder()
     cell = runner.run_cell(adapter, bench, k=5, repeats=1, run_id_prefix="t", model="gpt-4o-mini",
                            token_budget=5000,
-                           judge=JudgeConfig(cache=False, completer=recorder)).to_dict()
+                           judge=JudgeConfig(cache=False, completer_name="fake", completer=recorder)).to_dict()
     assert recorder.reader_calls, "no answer was generated"
     assert all(user.startswith(MARKER) for _, user in recorder.reader_calls)
     config = cell["receipt"]["config"]
@@ -76,7 +76,8 @@ def test_beam_s_rubric_shape_answers_with_the_configured_prompt() -> None:
 
 def test_the_full_context_agent_answers_with_its_evaluation_s_prompt() -> None:
     recorder = Recorder()
-    client = TestClient(create_app(recorder, "m", LONGMEMEVAL_READER))
+    client = TestClient(create_app(recorder, "m", LONGMEMEVAL_READER, provider="anthropic",
+                                  key_name="ANTHROPIC_API_KEY"))
     feed = {"model": "m", "user": "s", "metadata": {"memrank_op": "feed"},
             "messages": [{"role": "user", "content": "My dog is Biscuit."}]}
     ask = {"model": "m", "user": "s", "metadata": {"memrank_op": "ask"},

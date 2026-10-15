@@ -49,8 +49,8 @@ ENGINE_ENV: dict[str, dict[tuple[str, str], str]] = {
         ("embedder", "provider"): "MEM0_EMBEDDER_PROVIDER",
         ("embedder", "model"): "MEM0_EMBEDDER_MODEL",
         ("embedder", "dims"): "MEM0_EMBEDDING_DIMS",
-        # The fork's server (mem0-internal server/main.py) passes these to the OpenAI SDK as
-        # its base URL for an openai-family provider.
+        # The mem0 fork's HTTP server passes these to the OpenAI SDK as its base URL for an
+        # openai-family provider.
         ("llm", "endpoint"): "MEM0_LLM_ENDPOINT",
         ("embedder", "endpoint"): "MEM0_EMBEDDER_ENDPOINT",
     },

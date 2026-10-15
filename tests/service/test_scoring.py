@@ -9,6 +9,7 @@ from memrank.service.protocol import (
     CaseOutcome,
     Identity,
     Interval,
+    JudgeIdentity,
     QuestionOutcome,
     RunResult,
 )
@@ -17,6 +18,11 @@ from memrank.service.scoring import apply_verdicts, summarize
 PASS = {"status": "judged", "score": 1.0, "passed": True, "rationale": "ok"}
 FAIL = {"status": "judged", "score": 0.0, "passed": False, "rationale": "no"}
 UNPARSEABLE = {"status": "unjudged", "error": "judge replied nonsense"}
+
+
+def judged_by(model: str) -> JudgeIdentity:
+    """An Anthropic judge of ``model``, as a run records it."""
+    return JudgeIdentity(judge=f"anthropic:{model}", judge_provider="anthropic", judge_model=model)
 
 
 def question(case: str, qid: str, category: str, *, error: str | None = None) -> QuestionOutcome:
@@ -56,8 +62,8 @@ def test_an_unjudged_run_has_counts_and_no_score():
     ({"q1": PASS, "q2": UNPARSEABLE, "q3": PASS}, 2 / 3, 3, 1),
 ], ids=["failure-scores-zero", "wrong-answers", "unparseable-left-out"])
 def test_verdicts_score_the_run(verdicts, mean, n, unjudged):
-    scored = apply_verdicts(recorded(), verdicts, judge_model="j", judge_samples=1)
-    assert scored.judged and scored.notice is None and scored.identity.judge_model == "j"
+    scored = apply_verdicts(recorded(), verdicts, judge=judged_by("j"), judge_samples=1)
+    assert scored.judged and scored.notice is None and scored.identity.judge == "anthropic:j"
     assert scored.score.mean == pytest.approx(mean) and scored.score.n == n
     assert scored.unjudged == unjudged
     assert set(scored.per_category) == {"temporal", "single-hop"}
@@ -65,5 +71,17 @@ def test_verdicts_score_the_run(verdicts, mean, n, unjudged):
 
 def test_applying_the_same_verdicts_twice_changes_nothing():
     verdicts = {"q1": PASS, "q2": FAIL, "q3": PASS}
-    once = apply_verdicts(recorded(), verdicts, judge_model="j", judge_samples=1)
-    assert apply_verdicts(once, verdicts, judge_model="j", judge_samples=1) == once
+    once = apply_verdicts(recorded(), verdicts, judge=judged_by("j"), judge_samples=1)
+    assert apply_verdicts(once, verdicts, judge=judged_by("j"), judge_samples=1) == once
+
+
+def test_a_verdict_keeps_its_probability():
+    verdicts = {"q1": {**PASS, "probability": 0.93}, "q2": FAIL, "q3": PASS}
+    scored = apply_verdicts(recorded(), verdicts, judge=judged_by("j"), judge_samples=1)
+    probabilities = [q.probability for case in scored.cases for q in case.questions]
+    assert probabilities == [0.93, None, None, None]
+
+
+def test_no_judge_model_leaves_every_judge_field_empty():
+    scored = apply_verdicts(recorded(), {"q1": PASS}, judge=None, judge_samples=0)
+    assert scored.identity.judge is None and scored.identity.judge_identity() is None
