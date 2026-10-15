@@ -39,7 +39,7 @@ from memrank.definitions import commands
 from memrank.definitions.base import Grader, ModelJudge, Verdict
 from memrank.definitions.schema import DEFAULT_TIMEOUT_S, GraderSpec
 from memrank.judging.judge import JUDGE, UnparseableVerdict, judge_answer
-from memrank.judging.shape import NuggetJudgeShape
+from memrank.judging.shape import BinaryJudgeShape, NuggetJudgeShape
 from memrank.outcome import Step
 from memrank.service.grading import verdict_for
 from memrank.service.protocol import QuestionOutcome
@@ -130,6 +130,11 @@ class Judge(Grader):
         assert model is not None  # uses_model: the runner always hands one over
         references = _references(question)
         gold = references[0] if len(references) == 1 else "any of: " + " | ".join(references)
+        if model.decider is not None:
+            # Generic rules, no category vocabulary: the evaluation file's categories are its own.
+            return model.decider.verdict(BinaryJudgeShape(frozenset()),
+                                         {"text": question.question, "gold_answers": [gold]},
+                                         question.answer or "")
         try:
             verdict = judge_answer(model.complete, question=question.question,
                                    answer=question.answer or "", gold=gold,
@@ -146,7 +151,8 @@ class Rubric(Grader):
 
     def grade(self, question: QuestionOutcome, model: ModelJudge | None) -> Verdict:
         assert model is not None  # uses_model: the runner always hands one over
-        return verdict_for(NuggetJudgeShape(), model.complete, model.cfg, question)
+        return verdict_for(NuggetJudgeShape(), model.complete, model.cfg, question,
+                           decider=model.decider)
 
 
 class GraderFailed(commands.CommandFailed):

@@ -33,8 +33,16 @@ from dataclasses import dataclass, field
 # never written down) are reserved.
 from memrank.accounts.org_endpoints import NAME_PATTERN, RESERVED_NAMES
 
-#: The adapters a spec can resolve to. ``jev`` grades rather than completes (a later step).
+#: The adapters a named endpoint can speak through: the ones that complete text.
 ADAPTER_NAMES = ("anthropic", "openai")
+
+#: Built-ins that decide rather than complete: they answer typed questions with probabilities, so
+#: they judge through their own grader (:mod:`memrank.judging.jev`) and never write an answer.
+DECIDERS = ("typesafe",)
+
+#: Model names that move when a release ships. A threshold is tied to the release it was set
+#: against, so a decider is named by a versioned id and these are refused.
+MOVING_ALIASES = ("-latest", "-preview")
 
 #: The field each adapter sends its output budget under.
 MAX_TOKENS = "max_tokens"
@@ -59,6 +67,8 @@ BUILTINS: dict[str, Builtin] = {
                          MAX_TOKENS),
     "openai": Builtin("openai", "https://api.openai.com/v1", "OPENAI_API_KEY",
                       MAX_COMPLETION_TOKENS),
+    # TypeSafe System One. It has no output budget, so it sends no max-tokens field at all.
+    "typesafe": Builtin("typesafe", "https://api.typesafe.ai", "TYPESAFE_API_KEY", ""),
 }
 
 
@@ -122,13 +132,18 @@ class ResolvedJudge:
         return self.endpoint.fingerprint if self.endpoint else None
 
     @property
+    def decides(self) -> bool:
+        """Whether this judge decides typed questions (:data:`DECIDERS`) rather than completing."""
+        return self.endpoint is None and self.adapter in DECIDERS
+
+    @property
     def max_tokens_field(self) -> str:
         # An endpoint is a compatible server, which implements the long-standing field.
         return MAX_TOKENS if self.endpoint else BUILTINS[self.adapter].max_tokens_field
 
 
 #: How a message names a built-in provider; an endpoint is named by its own name.
-_VENDORS = {"anthropic": "Anthropic", "openai": "OpenAI"}
+_VENDORS = {"anthropic": "Anthropic", "openai": "OpenAI", "typesafe": "TypeSafe"}
 
 
 def provider_label(provider: str) -> str:
@@ -164,6 +179,9 @@ def resolve(spec: str, endpoints: Sequence[Endpoint] = ()) -> ResolvedJudge:
     provider, model = parse_spec(spec)
     if provider in BUILTINS:
         builtin = BUILTINS[provider]
+        if provider in DECIDERS and model.endswith(MOVING_ALIASES):
+            raise ValueError(f"judge {spec!r} names a moving alias; name the versioned model, "
+                             f"e.g. {provider}:jev-1.14.0, so the verdicts stay tied to it")
         return ResolvedJudge(builtin.adapter, model, None, builtin.key_name)
     named = {endpoint.name: endpoint for endpoint in endpoints}
     if provider in named:

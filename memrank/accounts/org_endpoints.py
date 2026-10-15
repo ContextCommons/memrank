@@ -35,7 +35,7 @@ NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 #: Provider names a judge spec already means something by. An endpoint called `anthropic` would
 #: make `anthropic:claude-haiku-4-5` ambiguous, and `unknown`/`custom` label recorded judges
 #: (plan 2026-10-15-judge-providers, Steps 1 and 2).
-RESERVED_NAMES = frozenset({"anthropic", "openai", "jev", "custom", "unknown"})
+RESERVED_NAMES = frozenset({"anthropic", "openai", "typesafe", "custom", "unknown"})
 
 #: The adapters an endpoint may speak through.
 ADAPTERS = ("openai", "anthropic")

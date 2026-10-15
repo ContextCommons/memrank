@@ -24,6 +24,11 @@ from memrank.loop.trace import RunTrace
 from memrank.outcome import Kind, Link, Outcome
 from memrank.service.protocol import QuestionOutcome, RunResult
 
+#: What the readout says of an ability whose verdicts the judge marked experimental (Jev's
+#: event_ordering, :data:`memrank.judging.jev.grade.EXPERIMENTAL_ORDERING`).
+EXPERIMENTAL_WORDS = ("scored by Jev without extracting the answer's events, so it is not the "
+                      "same measurement as the extraction-based score")
+
 
 def failures(result: RunResult, trace: RunTrace) -> str | None:
     """Why answers failed, counted by cause: ``221 answers failed: <cause>``; ``None`` if none.
@@ -87,6 +92,11 @@ def result_facts(result: RunResult,
                                   "the judge and are not scored"))
     if result.notice and result.judged:
         facts.append(("Notice", result.notice))
+    experimental = sorted({(q.category or "uncategorized").replace("_", " ")
+                           for q in questions or []
+                           if q.decision and q.decision.get("experimental")})
+    if experimental:
+        facts.append(("Experimental", f"{', '.join(experimental)}: {EXPERIMENTAL_WORDS}"))
     facts.append(("Speed", readout.speed(result)))
     judge = result.identity.judge_label()
     if judge:

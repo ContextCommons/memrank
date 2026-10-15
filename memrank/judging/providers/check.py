@@ -15,7 +15,8 @@
 
 A built-in provider is asked for the one model (``GET /v1/models/{model}`` on Anthropic,
 ``GET /models/{model}`` on OpenAI); a named endpoint is asked for its models listing, which must
-list the model. Neither is billed. An endpoint registered without a listing is checked with one
+list the model. Neither is billed. Jev is asked by :mod:`memrank.judging.jev.check`, which settles
+the key for free and a versioned model with one tiny request. An endpoint registered without a listing is checked with one
 1-token completion instead -- recorded on the endpoint when it was registered, never decided by
 retrying here.
 
@@ -88,6 +89,17 @@ def pasted_key_refusal(target: ResolvedJudge, key: str) -> str | None:
     return model_refusal(target, key)
 
 
+def _decider_refusal(target: ResolvedJudge, key: str, who: str,
+                     transport: httpx.BaseTransport | None) -> str | None:
+    from memrank.judging.jev.check import jev_refusal
+
+    try:
+        return jev_refusal(target, key, transport=transport)
+    except httpx.HTTPError as exc:
+        raise JudgeUnreachable(f"could not reach {who} to check the judge "
+                               f"({type(exc).__name__})") from exc
+
+
 def model_refusal(target: ResolvedJudge, key: str, *, models_listing: bool = True,
                   transport: httpx.BaseTransport | None = None) -> str | None:
     """``None`` when ``key`` reaches ``target``'s model, else why not, in a few words.
@@ -96,10 +108,12 @@ def model_refusal(target: ResolvedJudge, key: str, *, models_listing: bool = Tru
         JudgeUnreachable: The provider could not be reached; its URL is never in the message.
         ProviderError: The provider answered with something other than a refusal.
     """
+    who = provider_label(target.provider)
+    if target.decides:
+        return _decider_refusal(target, key, who, transport)
     if not models_listing:
         return _ping(target, key)
     url, headers = _lookup(target, key)
-    who = provider_label(target.provider)
     try:
         with httpx.Client(timeout=_CHECK_TIMEOUT_S, transport=transport) as client:
             response = client.get(url, headers=headers)

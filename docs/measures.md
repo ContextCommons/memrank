@@ -193,6 +193,13 @@ reader's `temperature=0` -- fails with the provider's own error; nothing is drop
 carry the judge as typed, the provider and model it resolved to, and for an endpoint
 `local:<name>` instead of its URL.
 
+`typesafe` (`TYPESAFE_API_KEY`) is a third built-in, for TypeSafe's Jev:
+`memrank run --judge typesafe:jev-1.14.0`. It is not the default. Jev answers typed questions with probabilities and writes no text, so it
+cannot be a `reader` and this `Judge` measure refuses it. It grades a recorded run's answers
+with fixed questions and a 0.5 threshold, and `event_ordering` under it is experimental;
+[methodology](methodology.md#jev-a-judge-that-decides-rather-than-writes) describes how each
+evaluation is graded.
+
 To judge with your own code, pass a completer, any `(model, system, user) -> text`, together with
 a name:
 

@@ -91,7 +91,9 @@ class JudgeConfig:
     """How the reader and the judge are reached, and how a query is graded.
 
     ``reader`` and ``judge`` are ``provider:model`` specs (:mod:`memrank.judging.providers`):
-    ``anthropic:``, ``openai:``, or the name of one of ``endpoints``.
+    ``anthropic:``, ``openai:``, or the name of one of ``endpoints``. The judge may also be
+    ``typesafe:`` (TypeSafe's Jev), which grades through :mod:`memrank.judging.jev` rather than a
+    completer.
 
     ``completer`` replaces the providers with your own code (``(model, system, user) -> text``),
     called with the model part of the role's spec. It must carry a ``completer_name``: records then
@@ -142,6 +144,9 @@ class JudgeConfig:
                 resolve(spec, self.endpoints)
             else:
                 parse_spec(spec)
+        if self.completer is None and resolve(self.reader, self.endpoints).decides:
+            raise ValueError(f"reader {self.reader!r} decides typed questions and writes no "
+                             f"text, so it cannot answer; it can only judge")
 
     def spec(self, role: str) -> str:
         """The spec that plays ``role`` (:data:`READER` or :data:`JUDGE`)."""

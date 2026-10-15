@@ -25,6 +25,7 @@ from memrank.judging.providers.errors import ProviderError
 from memrank.judging.providers.openai import openai_send
 from memrank.judging.providers.spec import (
     BUILTINS,
+    DECIDERS,
     RESERVED_NAMES,
     Endpoint,
     ResolvedJudge,
@@ -36,9 +37,10 @@ from memrank.judging.providers.spec import (
 )
 from memrank.judging.providers.types import Adapter, Send
 
-#: The adapter each resolved spec is sent through.
+#: The adapter each resolved spec that completes text is sent through. A decider (``typesafe``) has
+#: none: it judges through :mod:`memrank.judging.jev`.
 ADAPTERS: dict[str, Adapter] = {"anthropic": anthropic_send, "openai": openai_send}
 
-__all__ = ["ADAPTERS", "BUILTINS", "RESERVED_NAMES", "Adapter", "Endpoint", "ProviderError",
+__all__ = ["ADAPTERS", "BUILTINS", "DECIDERS", "RESERVED_NAMES", "Adapter", "Endpoint", "ProviderError",
            "ResolvedJudge", "Send", "check_endpoints", "parse_spec", "provider_label",
            "reach_label", "resolve"]

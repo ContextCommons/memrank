@@ -211,9 +211,15 @@ class QuestionOutcome(BaseModel):
     score: float | None = None
     passed: bool | None = None
     rationale: str | None = None
-    #: The grader's probability that the answer is correct, when it gives one (a Jev verdict);
-    #: None for a text judge, whose verdict is its rationale.
+    #: The grader's probability that the answer passes, when it gives one: for a Jev binary
+    #: verdict, the least of its conditions' probabilities on the passing side, so ``passed`` is
+    #: this at or above the recorded threshold. None for a text judge, and for a Jev rubric or
+    #: ordering verdict, whose probabilities are all in ``decision``.
     probability: float | None = None
+    #: What a judge that gives no rationale (Jev) decided from: the state it read, the question
+    #: set's version, every answer with its probabilities, the rule and threshold, and the model
+    #: asked for beside the one that answered. None for a text judge.
+    decision: dict[str, Any] | None = None
 
 
 class CaseOutcome(BaseModel):

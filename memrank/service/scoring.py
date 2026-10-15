@@ -76,7 +76,8 @@ def _graded(question: QuestionOutcome, verdict: dict[str, Any] | None) -> Questi
     return question.model_copy(update={
         "status": verdict["status"], "score": verdict.get("score"),
         "passed": verdict.get("passed"), "rationale": verdict.get("rationale"),
-        "error": verdict.get("error"), "probability": verdict.get("probability")})
+        "error": verdict.get("error"), "probability": verdict.get("probability"),
+        "decision": verdict.get("decision")})
 
 
 def apply_verdicts(result: RunResult, verdicts: dict[str, dict[str, Any]], *,
@@ -87,7 +88,7 @@ def apply_verdicts(result: RunResult, verdicts: dict[str, dict[str, Any]], *,
     Args:
         result: The run as the runner recorded it, every answer ``not_judged``.
         verdicts: ``{question_id: {"status", "score", "passed", "rationale", "error",
-            "probability"}}`` for every answered question.
+            "probability", "decision"}}`` for every answered question.
         judge: The judge that graded, recorded in the result's identity; None when no
             answer needed one (every grader was deterministic or a program).
         judge_samples: How many gradings each verdict is a vote over.

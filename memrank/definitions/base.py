@@ -22,12 +22,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from memrank.judging.judge import Completer, JudgeConfig
 from memrank.service.protocol import Question, QuestionOutcome, Session
 
-#: A grading's outcome: ``{"status": "judged", "score", "passed", "rationale"}``, or
+if TYPE_CHECKING:
+    from memrank.judging.jev import JevJudge
+
+#: A grading's outcome: ``{"status": "judged", "score", "passed", "rationale"}`` -- with
+#: ``probability`` and ``decision`` from a judge that decides (Jev) -- or
 #: ``{"status": "unjudged", "error"}`` when a model judge never gave a readable verdict.
 Verdict = dict[str, Any]
 
@@ -48,10 +52,15 @@ class Case:
 
 @dataclass(frozen=True)
 class ModelJudge:
-    """The model a grader may call: the organisation-keyed completer and its configuration."""
+    """The model a grader may call: the organisation-keyed completer and its configuration.
+
+    ``decider`` is set when the judge decides typed questions instead of completing text (Jev);
+    every model grader then grades through it, and ``complete`` is never called for a verdict.
+    """
 
     complete: Completer
     cfg: JudgeConfig
+    decider: JevJudge | None = None
 
 
 class Grader(ABC):

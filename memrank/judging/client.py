@@ -71,6 +71,11 @@ def _cache_dir() -> Path:
     return out
 
 
+def cache_dir() -> Path:
+    """The owner-only directory judge responses are cached in (``$MEMRANK_CACHE_DIR``)."""
+    return _cache_dir()
+
+
 def cached_completer(inner: Completer, *, cache_dir: Path, prompt_version: str,
                      key_prefix: str = "") -> Completer:
     """``inner`` with its responses cached under a key of ``key_prefix`` and the prompt.
@@ -320,6 +325,10 @@ def build_completer(cfg: JudgeConfig, *,
     A ``cfg.completer`` (Level 2: your own code) is gated too. Excluding it would mean the
     composition under test is not the composition that runs.
     """
+    if cfg.completer is None and resolve(cfg.judge, cfg.endpoints).decides:
+        raise ValueError(f"judge {cfg.judge!r} decides typed questions and writes no text; it "
+                         f"judges a recorded run (memrank run, memrank.loop.judge), not through "
+                         f"a completer")
     held = dict(keys or {})
     routes = {role: _route(cfg, role, held) for role in (READER, JUDGE)}
 
