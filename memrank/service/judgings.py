@@ -47,6 +47,7 @@ class QuestionVerdict(BaseModel):
     rationale: str | None = None
     error: str | None = None
     probability: float | None = None
+    decision: dict[str, Any] | None = None
 
 
 class Judging(BaseModel):
@@ -113,7 +114,8 @@ def judging_of(judged: RunResult) -> Judging:
                          "this result was not graded by a judge model")
     verdicts = [QuestionVerdict(case_id=q.case_id, question_id=q.question_id, status=q.status,
                                 score=q.score, passed=q.passed, rationale=q.rationale,
-                                error=q.error, probability=q.probability)
+                                error=q.error, probability=q.probability,
+                                decision=q.decision)
                 for case in judged.cases for q in case.questions]
     return Judging(**judge.model_dump(),
                    judge_prompt_version=identity.judge_prompt_version,

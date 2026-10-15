@@ -20,11 +20,14 @@ dataset is never loaded to judge.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from memrank.judging.judge import Completer, JudgeConfig, UnparseableVerdict
 from memrank.judging.shape import JudgeShape
 from memrank.service.protocol import QuestionOutcome
+
+if TYPE_CHECKING:
+    from memrank.judging.jev import JevJudge
 
 
 def query_of(question: QuestionOutcome) -> dict[str, Any]:
@@ -34,8 +37,14 @@ def query_of(question: QuestionOutcome) -> dict[str, Any]:
 
 
 def verdict_for(shape: JudgeShape, complete: Completer, cfg: JudgeConfig,
-                question: QuestionOutcome) -> dict[str, Any]:
-    """One answer's verdict. A reply the judge never makes parseable is recorded as unjudged."""
+                question: QuestionOutcome, *,
+                decider: JevJudge | None = None) -> dict[str, Any]:
+    """One answer's verdict. A reply the judge never makes parseable is recorded as unjudged.
+
+    A ``decider`` (Jev) grades the shape with its own typed questions in place of ``complete``.
+    """
+    if decider is not None:
+        return decider.verdict(shape, query_of(question), question.answer or "")
     try:
         grade = shape.grade_answer(complete, cfg, query=query_of(question),
                                    answer=question.answer or "")

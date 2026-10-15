@@ -40,17 +40,31 @@ def test_builtins_and_endpoints_resolve_to_adapter_model_endpoint_and_key():
 
 
 def test_an_unknown_provider_is_refused_naming_what_is_known():
-    with pytest.raises(ValueError, match="known: anthropic, openai, router"):
+    with pytest.raises(ValueError, match="known: anthropic, openai, typesafe, router"):
         resolve("nosuch:model", [ROUTER])
 
 
-@pytest.mark.parametrize("spec", ["custom:mine", "unknown:claude-haiku-4-5", "jev:jev-1.14.0"])
+@pytest.mark.parametrize("spec", ["custom:mine", "unknown:claude-haiku-4-5"])
 def test_reserved_providers_cannot_be_typed(spec):
     with pytest.raises(ValueError):
         resolve(spec)
 
 
-@pytest.mark.parametrize("name", ["anthropic", "custom", "unknown", "jev", "a:b", ""])
+def test_typesafe_is_a_builtin_that_decides_rather_than_completes():
+    jev = resolve("typesafe:jev-1.14.0")
+    assert (jev.adapter, jev.model, jev.endpoint, jev.key_name) == (
+        "typesafe", "jev-1.14.0", None, "TYPESAFE_API_KEY")
+    assert jev.decides and jev.api_base == "https://api.typesafe.ai"
+    assert not resolve("openai:gpt-5").decides
+
+
+@pytest.mark.parametrize("alias", ["jev-latest", "jev-preview"])
+def test_a_moving_jev_alias_is_refused(alias):
+    with pytest.raises(ValueError, match="moving alias"):
+        resolve(f"typesafe:{alias}")
+
+
+@pytest.mark.parametrize("name", ["anthropic", "custom", "unknown", "typesafe", "a:b", ""])
 def test_an_endpoint_may_not_take_a_reserved_or_malformed_name(name):
     with pytest.raises(ValueError):
         Endpoint(name=name, adapter="openai", api_base="https://x.invalid", key_ref="K")

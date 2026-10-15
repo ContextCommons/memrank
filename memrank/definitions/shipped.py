@@ -77,7 +77,8 @@ class ShapeGrader(Grader):
 
     def grade(self, question: QuestionOutcome, model: ModelJudge | None) -> Verdict:
         assert model is not None  # uses_model: the runner always hands one over
-        return verdict_for(self.shape, model.complete, model.cfg, question)
+        return verdict_for(self.shape, model.complete, model.cfg, question,
+                           decider=model.decider)
 
 
 class BenchmarkDefinition(Definition):

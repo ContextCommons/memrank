@@ -39,6 +39,15 @@ def role_record(cfg: JudgeConfig, role: str) -> dict[str, Any]:
         return {"spec": f"{CUSTOM}:{cfg.completer_name}", "provider": CUSTOM,
                 "model": cfg.completer_name, "endpoint": None, "settings": {"adapter": CUSTOM}}
     target = resolve(cfg.spec(role), cfg.endpoints)
+    if target.decides:
+        # A decider is sent no output budget and no sampling; what fixes its verdicts is the
+        # question set and the threshold, so those are its settings.
+        from memrank.judging.jev import QUESTION_SET, THRESHOLD
+
+        return {"spec": cfg.spec(role), "provider": target.adapter, "model": target.model,
+                "endpoint": None, "settings": {"adapter": target.adapter,
+                                               "question_set": QUESTION_SET,
+                                               "threshold": THRESHOLD}}
     settings = {"adapter": target.adapter, "max_tokens": _MAX_TOKENS,
                 "max_tokens_field": target.max_tokens_field, **sampling_params(role, cfg)}
     return {"spec": cfg.spec(role), "provider": target.adapter, "model": target.model,

@@ -21,6 +21,10 @@ own grader (:meth:`~memrank.definitions.base.Definition.grader_for`): a shipped 
 judge shape, or an evaluation file's built-in or command grader. Only a grader that calls the
 judge model needs the key, so an evaluation graded without one runs without one. The judge
 cache makes judging again after an interruption free for every answer already graded.
+
+``typesafe:`` (TypeSafe's Jev, ``TYPESAFE_API_KEY``) decides typed questions rather than
+completing text, so its graders go through :class:`~memrank.judging.jev.JevJudge` and name its
+question set where a text judge names its prompts' version.
 """
 
 from __future__ import annotations
@@ -31,9 +35,11 @@ from concurrent.futures import ThreadPoolExecutor
 from memrank.definitions import resolve
 from memrank.definitions.base import Definition, ModelJudge, Verdict
 from memrank.evaluation.constants import DEFAULT_JUDGE_WORKERS
-from memrank.judging.client import build_completer
-from memrank.judging.judge import JUDGE, JudgeConfig
+from memrank.judging.client import build_completer, cache_dir
+from memrank.judging.jev import QUESTION_SET, JevClient, JevJudge
+from memrank.judging.judge import JUDGE, Completer, JudgeConfig
 from memrank.judging.prompts import JUDGE_PROMPT_VERSION
+from memrank.judging.providers import ResolvedJudge
 from memrank.judging.providers import resolve as resolve_judge
 from memrank.judging.record import role_record
 from memrank.service.protocol import JudgeIdentity, QuestionOutcome, RunResult
@@ -62,9 +68,33 @@ def _model(cfg: JudgeConfig, api_key: str | None) -> ModelJudge:
         if api_key is None:
             raise ValueError("a grader needs the judge model and no key was given")
         # The key is the one the judge names: its provider's, or its endpoint's key_ref.
-        keys[resolve_judge(cfg.judge, cfg.endpoints).key_name] = api_key
+        target = resolve_judge(cfg.judge, cfg.endpoints)
+        if target.decides:
+            return _decider(cfg, target, api_key)
+        keys[target.key_name] = api_key
     complete, _ = build_completer(cfg, keys=keys)
     return ModelJudge(complete=complete, cfg=cfg)
+
+
+def _decider(cfg: JudgeConfig, target: ResolvedJudge, api_key: str) -> ModelJudge:
+    """A judge that decides typed questions (Jev): one request per answer, never a completion."""
+    if cfg.samples != 1:
+        raise ValueError(f"{cfg.judge} answers one request per verdict; samples must be 1, "
+                         f"got {cfg.samples}")
+    client = JevClient(target, api_key, cache_dir=cache_dir() if cfg.cache else None)
+    return ModelJudge(complete=_writes_no_text(cfg.judge), cfg=cfg, decider=JevJudge(client))
+
+
+def _writes_no_text(spec: str) -> Completer:
+    def complete(model: str, system: str, user: str) -> str:
+        raise ValueError(f"{spec} decides typed questions and writes no text")
+
+    return complete
+
+
+def prompt_version(model: ModelJudge) -> str:
+    """What names the judge's questions: the text judge's prompts, or a decider's question set."""
+    return QUESTION_SET if model.decider is not None else JUDGE_PROMPT_VERSION
 
 
 def _identity(model: ModelJudge) -> JudgeIdentity:
@@ -110,4 +140,4 @@ def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None
     return apply_verdicts(result, by_question,
                           judge=_identity(model) if model else None,
                           judge_samples=model.cfg.samples if model else 0,
-                          judge_prompt_version=JUDGE_PROMPT_VERSION if model else None)
+                          judge_prompt_version=prompt_version(model) if model else None)

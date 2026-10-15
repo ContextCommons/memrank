@@ -32,14 +32,68 @@ value is invented on an evaluation's behalf.
 **`judge`** scores generated-answer correctness using a model. The Python API requires callers
 to add it explicitly. Applying it without the required API key raises an error. `memrank run`
 judges with Claude Haiku (`anthropic:claude-haiku-4-5`) unless `--judge provider:model` names
-another judge: a built-in provider (`anthropic:<model>`, `openai:<model>`) or one of the
-organisation's named endpoints (`<endpoint>:<model>`, registered with `memrank endpoints add`).
+another judge: a built-in provider (`anthropic:<model>`, `openai:<model>`, or `typesafe:<model>`,
+described below) or one of the organisation's named endpoints (`<endpoint>:<model>`, registered
+with `memrank endpoints add`).
 Every result it produces names the judge as typed, the provider and model it resolved to, and,
 for an endpoint, its `<id>@<revision>` fingerprint -- never its URL. Scores judged by different
 judges are not comparable. Each verdict is cached locally, keyed by the judging instructions, the
 model and the exact question and answer; a judge other than the built-in `anthropic:` also keys
 it by its adapter and endpoint, so moving an endpoint never replays another endpoint's
 verdicts.
+
+### Jev, a judge that decides rather than writes
+
+`memrank run --judge typesafe:jev-1.14.0` judges with TypeSafe's Jev, using the organisation's saved
+`TYPESAFE_API_KEY`. It is an option, not the default. Jev writes no text: it answers typed
+questions about a state with probabilities. memrank therefore asks it a fixed set of questions
+(the question set, versioned as `jev-2026-10-15.1`) and turns the answers into a verdict with
+rules in code. Every probability is thresholded at **0.5**, a fixed value recorded in the
+judge's settings.
+
+- **LoCoMo, LongMemEval and an evaluation file's `judge` grader.** One request carries the
+  question, the reference and the candidate answer, and asks three independent yes/no
+  questions: does the answer give the reference information (paraphrases and equivalent dates
+  and numbers count), does it assert anything that conflicts with the reference, and does it
+  decline to answer. The answer passes when it states the reference, contradicts nothing and
+  does not decline. A LongMemEval abstention question passes only by declining. Each
+  LongMemEval question type's official rule is written into the criteria of the question it
+  bears on: the temporal off-by-one tolerance, a knowledge update allowed to mention earlier
+  information, and a preference rubric that need not be met point by point. The answers judged
+  here come from the agent itself, so no sufficiency question is asked, as with any judge.
+- **BEAM's rubric abilities.** Each criterion is one three-level score (not met, partly met,
+  fully met) over the question and the response. The expected level is rounded half up and
+  mapped to 0, 0.5 or 1, and the question's score is their mean, as with a text judge. The full
+  distribution over the three levels is kept.
+- **BEAM's `event_ordering` is experimental under Jev.** Jev cannot list the events an answer
+  gives, so memrank asks about the reference events instead: one yes/no question per event
+  (does the answer assert it, rather than negate or hedge it), one three-way choice per pair of
+  events (which one the answer puts first, or unclear), and one yes/no question for whether the
+  answer lists events that are not among the reference events. Recall is the share of
+  reference events asserted. Precision is 1, or `k / (k + 1)` for `k` asserted events when the
+  answer also lists another event, the most an extraction could have found. Order is Kendall
+  tau-b over the pairs of asserted events: a pair in reference order is concordant, a reversed
+  pair is discordant, and an unclear pair is a tie in the answer. Fewer than two asserted
+  events leave tau-b at 0. The score is `(tau_b + 1) / 2` times the F1 of precision and
+  recall. This has the shape of the extraction-based score but is **not the same
+  measurement**. Every such verdict, and the run's ending, say so.
+
+Jev gives no rationale. In its place, each verdict carries a `decision` record: the exact state
+sent, the question set and a digest of its questions, every answer with its probabilities, the
+rule and threshold that decided, and the model requested beside the model that answered. For a
+binary verdict, `probability` is the lowest of the conditions' probabilities on the passing side,
+so `passed` is exactly `probability >= 0.5`. Changing the threshold later is therefore a
+re-scoring of stored probabilities, not a rerun. Moving aliases (`jev-latest`, `jev-preview`) are
+refused, so a verdict is always tied to a release. Before the agent starts, memrank checks the
+key with `GET /v1/models` at no cost. That listing names only the aliases, so a versioned model
+is confirmed with one tiny request. A rate limit (429) waits for as long as TypeSafe asks, and
+an overload (529) is retried with backoff. Nothing falls back to another judge. Responses are
+cached under the provider, endpoint, model, question set and exact request, so a rerun replays
+its verdicts; a fresh call is not documented to return identical probabilities.
+
+Jev's agreement with human graders on these evaluations has not been measured, and its
+verdicts are not comparable with a text judge's. It judges recorded runs (`memrank run`); the
+library's `Judge` measure, which writes answers from retrieved context, refuses it.
 
 **Metric applicability.** `substring_recall_supported` says whether the answer-substring proxy
 applies. `composite_rankable` independently says whether the evaluation's own composite may be

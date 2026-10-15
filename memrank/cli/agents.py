@@ -67,7 +67,8 @@ def run(
     seed: int = typer.Option(0, "--seed", help="Seed for case and question sampling"),
     judge: str = typer.Option(DEFAULT_JUDGE, "--judge", metavar="SPEC",
                               help="Who judges the answers, as provider:model: anthropic:..., "
-                                   "openai:..., or <endpoint>:<model> for one of your "
+                                   "openai:..., typesafe:jev-1.14.0 (TypeSafe's Jev), or "
+                                   "<endpoint>:<model> for one of your "
                                    "organisation's endpoints (`memrank endpoints ls`). Judging "
                                    "uses your organisation's saved key for it"),
     no_judge: bool = typer.Option(False, "--no-judge",

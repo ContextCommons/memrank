@@ -107,3 +107,50 @@ def score_sequence(reference: list[str], predicted: list[str]) -> OrderingScore:
     tau_norm = (kendall_tau_b(ranks(reference), ranks(predicted)) + 1) / 2
     return OrderingScore(precision=precision, recall=recall, f1=f1,
                          tau_norm=tau_norm, score=tau_norm * f1)
+
+
+#: How a judged reference pair is ordered in the answer, relative to the reference order.
+SAME, REVERSED, UNORDERED = "same", "reversed", "unordered"
+
+
+def score_relations(n_reference: int, present: list[int], relations: dict[tuple[int, int], str],
+                    extras: bool) -> OrderingScore:
+    """Score an answer from per-event and per-pair judgements, with no list extracted from it.
+
+    The extraction-free counterpart of :func:`score_sequence`, for a judge that answers typed
+    questions about the reference events rather than writing the answer's events out. Every
+    quantity is a count of judgements:
+
+    - ``recall`` is the share of reference events the answer asserts (``present``).
+    - ``precision`` is 1 when the answer lists nothing beyond the reference, and
+      ``k / (k + 1)`` for ``k`` present events when it lists at least one other: the most an
+      extraction could have found, since one extra is all the signal says. 0 when ``k`` is 0.
+    - ``tau_norm`` is ``(tau_b + 1) / 2`` over the pairs of present events, each judged in the
+      reference order (concordant), reversed (discordant) or unordered (tied in the answer).
+      The reference is strictly ordered, so tau-b is ``(C - D) / sqrt(n0 * (n0 - T))``; it is 0,
+      as :func:`kendall_tau_b` makes it, when fewer than two events are present or every pair
+      is tied.
+
+    ``score`` is ``tau_norm * f1``, as for the extraction-based score -- the same shape, not the
+    same measurement: the answer's own events are never enumerated.
+
+    Args:
+        n_reference: How many reference events there are.
+        present: The indices of the reference events the answer asserts.
+        relations: For each pair ``(i, j)`` of present events with ``i < j``, :data:`SAME`,
+            :data:`REVERSED` or :data:`UNORDERED`.
+        extras: Whether the answer lists an event that is none of the reference events.
+    """
+    found = len(present)
+    recall = found / n_reference if n_reference else 0.0
+    precision = 0.0 if not found else (found / (found + 1) if extras else 1.0)
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    concordant = sum(1 for r in relations.values() if r == SAME)
+    discordant = sum(1 for r in relations.values() if r == REVERSED)
+    pairs = len(relations)
+    tied = pairs - concordant - discordant
+    denominator = math.sqrt(pairs * (pairs - tied))
+    tau_b = (concordant - discordant) / denominator if denominator else 0.0
+    tau_norm = (tau_b + 1) / 2
+    return OrderingScore(precision=precision, recall=recall, f1=f1, tau_norm=tau_norm,
+                         score=tau_norm * f1)
