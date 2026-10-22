@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import secrets
 
-from memrank.connect.base import Connector
+from memrank.connect.base import Connector, answer_of
 from memrank.errors import MemrankError
 from memrank.service.protocol import Op, Question, Session, Step, Turn
 
@@ -66,7 +66,7 @@ def leak_probe(connector: Connector, token: str | None = None) -> None:
     connector.reset(reset_a)
     connector.feed(feed_a)
     connector.reset(reset_b)
-    answer = connector.ask(ask_b)
+    answer = answer_of(connector.ask(ask_b)).text
     if canary(token).lower() in answer.lower():
         raise LeakDetected(
             "Your agent was told a code word in one conversation and repeated it when asked in a "

@@ -17,6 +17,10 @@ Each of reset, feed and ask is a templated request (see :mod:`memrank.connect.te
 answer is pulled out of the ask response with a JMESPath expression (https://jmespath.org), the
 query language AWS's CLI uses, so ``choices[0].message.content`` means what it means there.
 
+``ask.retrieval_ms`` optionally names where the agent reports its own memory retrieval time
+for the answer, in milliseconds; memrank records it beside the time it measures itself and never
+in place of it (:mod:`memrank.connect.reply`).
+
 ``feed: chat`` replays every past turn through the ask request, one at a time, for an agent
 that has no endpoint to load history into; the replies are discarded.
 """
@@ -28,7 +32,6 @@ from types import SimpleNamespace
 from typing import Any, Literal
 
 import httpx
-import jmespath
 from pydantic import BaseModel, ConfigDict, Field
 
 from memrank.adapters.errors import body_excerpt, safe_json
@@ -37,8 +40,10 @@ from memrank.connect.base import (
     AgentError,
     AgentRateLimited,
     AgentUnreachable,
+    Answer,
     ConnectorConfigError,
 )
+from memrank.connect.reply import ReplyReader
 from memrank.rate_limit import RateLimitGate, retry_after_seconds
 from memrank.service.protocol import Step
 
@@ -71,6 +76,8 @@ class FeedCall(Call):
 
 class AskCall(Call):
     answer: str = Field(description="JMESPath to the answer in the JSON response")
+    retrieval_ms: str | None = Field(
+        default=None, description="JMESPath to the agent's own retrieval time, in milliseconds")
 
 
 class HttpSpec(BaseModel):
@@ -127,7 +134,7 @@ class HttpConnector:
     def __init__(self, spec: HttpSpec, transport: httpx.BaseTransport | None = None,
                  gate: RateLimitGate | None = None) -> None:
         self.spec = spec
-        self._answer = jmespath.compile(spec.ask.answer)
+        self._reply = ReplyReader(spec.ask.answer, spec.ask.retrieval_ms)
         self._http = httpx.Client(base_url=spec.base_url, timeout=spec.timeout_s,
                                   headers=_headers(spec.auth), transport=transport)
         self.gate = gate or RateLimitGate()
@@ -190,18 +197,14 @@ class HttpConnector:
                 "question_id": None, "timestamp": turn["timestamp"],
                 "messages": [{"role": "user", "content": line}]}
 
-    def ask(self, step: Step) -> str:
+    def ask(self, step: Step) -> Answer:
         return self._ask(template.ask_vars(step, self.spec.vars))
 
-    def _ask(self, variables: dict[str, Any]) -> str:
+    def _ask(self, variables: dict[str, Any]) -> Answer:
         response = self._send(self.spec.ask, variables)
         try:
             payload = response.json()
         except ValueError as exc:
             raise AgentError(f"ask response is not JSON: {response.text[:_ERROR_BODY_CHARS]}") \
                 from exc
-        answer = self._answer.search(payload)
-        if not isinstance(answer, str):
-            raise AgentError(f"{self.spec.ask.answer!r} found {answer!r} in the ask response, "
-                             "not an answer string")
-        return answer
+        return self._reply.read(payload, "the ask response")

@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from memrank.service.protocol import Interval, QuestionOutcome, RunResult
+from memrank.service.protocol import Interval, QuestionOutcome, ReportedTiming, RunResult
 
 #: Every answer is right or wrong (a gold-answer judge, exact, choice, numeric).
 RIGHT_OR_WRONG = "right_or_wrong"
@@ -238,6 +238,12 @@ def not_answered(result: RunResult, groups: list[FailureGroup] | None) -> str:
     return f"Agent didn't answer {result.failed} of {result.questions}{why}"
 
 
+def retrieval(reported: ReportedTiming) -> str:
+    """The agent's own retrieval time, said to be its word: memrank did not measure it."""
+    return (f"retrieval {duration(reported.p50_ms)} typical, {duration(reported.p95_ms)} slow, "
+            f"reported by your agent, {reported.reported} of {reported.answers} questions")
+
+
 def speed(result: RunResult) -> str:
     """Typical and slow answer times, and the typical time to load one conversation's history."""
     latency = result.latency_ms
@@ -245,6 +251,8 @@ def speed(result: RunResult) -> str:
     if latency.get("ask_p50") is not None:
         parts.append(f"answers {duration(latency.get('ask_p50'))} typical, "
                      f"{duration(latency.get('ask_p95'))} slow (1 in 20)")
+    if result.retrieval is not None:
+        parts.append(retrieval(result.retrieval))
     if latency.get("feed_p50") is not None:
         parts.append(f"loading the history {duration(latency.get('feed_p50'))} typical")
     return "; ".join(parts) or "not measured: no step was timed"

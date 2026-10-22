@@ -27,6 +27,7 @@ def test_a_preset_spec_loads_as_an_http_connector(tmp_path):
     assert spec.ref.spec_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
     assert isinstance(spec.connector, HttpConnector) and spec.start is None
     assert spec.connector.spec.ask.answer == "choices[0].message.content"
+    assert spec.connector.spec.ask.retrieval_ms == "memrank_retrieval_ms"
 
 
 @pytest.mark.parametrize(("text", "match"), [

@@ -211,6 +211,19 @@ cannot verify it, its decider is the system, and it is never the headline. The s
 keys are memrank's own measurement and a system cannot declare them at all -- a bucket that
 would render one is refused.
 
+**Retrieval time an agent reports.** In `memrank run`, answer time is memrank's clock around the
+whole `ask` call: the agent's memory retrieval, its model call and its overhead in one number. An
+agent may also report how long its memory retrieval took for each answer -- the agent file names
+where that figure sits in the agent's reply (`ask.retrieval_ms` for an HTTP agent, `ask_json` for
+a command agent; an `openai-chat` agent sends it as the completion's top-level
+`memrank_retrieval_ms`). It is the agent's own claim, not a measurement: memrank cannot check it, records
+it apart from `latency_ms` (as `retrieval`: p50 and p95 by nearest rank over the answers that
+reported it, with how many did out of how many answers), and never ranks or judges on it. It is
+part of the answer time, not added to it. An answer that reports nothing is left out rather than
+counted as zero, and a reported value that is not a non-negative number fails that answer. Every
+surface that shows it says it was reported by the agent, and for how many questions; a run whose
+agent reports nothing shows nothing extra.
+
 ## Tokens
 
 Usage is the one number memrank asks a system for, and it is a DECLARATION rather than a

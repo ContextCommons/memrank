@@ -21,7 +21,9 @@ second code path behind one.
 chat request under ``user`` = the attempt's session id, and the question is asked as a new
 request under the same ``user``. ``metadata.memrank_op`` says which of the two a request is;
 an agent may use it to skip generating a reply to history, and one that ignores it simply
-replies and the reply is discarded.
+replies and the reply is discarded. An agent may report its own memory retrieval time for an
+answer as a top-level ``memrank_retrieval_ms`` in the completion, in milliseconds; OpenAI clients
+ignore the extra field, and a reply without it reported none (:mod:`memrank.connect.reply`).
 """
 
 from __future__ import annotations
@@ -31,6 +33,9 @@ from typing import Any
 from memrank.connect.base import ConnectorConfigError
 
 _CHAT_PATH = "/v1/chat/completions"
+#: Where an ``openai-chat`` agent reports its retrieval time: namespaced, so no OpenAI-compatible
+#: server that does not mean it sends it.
+RETRIEVAL_MS_FIELD = "memrank_retrieval_ms"
 
 PRESETS: dict[str, dict[str, Any]] = {
     "openai-chat": {
@@ -42,7 +47,8 @@ PRESETS: dict[str, dict[str, Any]] = {
             "ask": {"method": "POST", "path": _CHAT_PATH,
                     "body": {"model": "{model}", "user": "{session_id}",
                              "messages": "{messages}", "metadata": {"memrank_op": "ask"}},
-                    "answer": "choices[0].message.content"},
+                    "answer": "choices[0].message.content",
+                    "retrieval_ms": RETRIEVAL_MS_FIELD},
         },
     },
 }
