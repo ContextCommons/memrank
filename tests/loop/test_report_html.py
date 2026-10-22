@@ -9,6 +9,7 @@ from memrank.service.protocol import (
     Identity,
     Interval,
     QuestionOutcome,
+    ReportedTiming,
     RunResult,
 )
 
@@ -49,3 +50,26 @@ def test_an_unjudged_run_says_so_first_and_grades_nothing():
 def test_the_page_fetches_nothing():
     page = render(result("blue", judged=True))
     assert "src=" not in page and "href=" not in page and "@import" not in page
+
+
+def test_retrieval_appears_only_when_the_agent_reported_it():
+    assert "etrieval" not in render(result("blue", judged=True))
+    plain = result("blue", judged=True)
+    question = plain.cases[0].questions[0].model_copy(
+        update={"elapsed_ms": 1700.0, "retrieval_ms": 180.0})
+    reported = plain.model_copy(update={
+        "retrieval": ReportedTiming(p50_ms=180.0, p95_ms=180.0, reported=1, answers=1),
+        "cases": [plain.cases[0].model_copy(update={"questions": [question]})]})
+    page = render(reported)
+    assert "Retrieval 180 ms typical, 180 ms slow, reported by your agent, 1 of 1 questions" in page
+    assert "1.70 s (retrieval 180 ms)" in page and "<th>Retrieval time</th>" in page
+
+
+def test_a_millisecond_retrieval_reads_in_ms_not_rounded_seconds():
+    plain = result("blue", judged=True)
+    question = plain.cases[0].questions[0].model_copy(
+        update={"elapsed_ms": 1700.0, "retrieval_ms": 7.0})
+    reported = plain.model_copy(update={
+        "retrieval": ReportedTiming(p50_ms=7.0, p95_ms=7.0, reported=1, answers=1),
+        "cases": [plain.cases[0].model_copy(update={"questions": [question]})]})
+    assert "1.70 s (retrieval 7 ms)" in render(reported)

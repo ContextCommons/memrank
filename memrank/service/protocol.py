@@ -138,6 +138,9 @@ class StepResult(BaseModel):
     answer: str | None = None
     error: str | None = None
     elapsed_ms: float = Field(ge=0)
+    #: The agent's own report of its retrieval time for this answer, in milliseconds. Declared,
+    #: not measured: ``elapsed_ms`` is memrank's clock, this is the agent's word (ATO-2595).
+    retrieval_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _exactly_one(self) -> StepResult:
@@ -146,6 +149,8 @@ class StepResult(BaseModel):
             raise ValueError(f"a step result carries exactly one of ok, answer, error; got {given}")
         if self.ok is False:
             raise ValueError("report a failed step as error, not ok=false")
+        if self.retrieval_ms is not None and self.answer is None:
+            raise ValueError("only an answer carries the agent's retrieval time")
         return self
 
 
@@ -208,6 +213,8 @@ class QuestionOutcome(BaseModel):
     answer: str | None = None
     error: str | None = None
     elapsed_ms: float | None = None
+    #: The retrieval time the agent reported for this answer; None when it reported none.
+    retrieval_ms: float | None = None
     score: float | None = None
     passed: bool | None = None
     rationale: str | None = None
@@ -366,6 +373,20 @@ class Identity(BaseModel):
         return judge.label() if judge is not None else None
 
 
+class ReportedTiming(BaseModel):
+    """A time the agent reported about itself, summarized over the answers that carried it.
+
+    Never memrank's measurement, which is ``latency_ms``: the two never share a field, and an
+    answer that reported nothing is left out of the percentiles rather than counted as zero.
+    """
+
+    p50_ms: float
+    p95_ms: float
+    #: How many answers carried the figure, of the ``answers`` the run recorded.
+    reported: int
+    answers: int
+
+
 class RunResult(BaseModel):
     """Scores, their variability, and every case's outcome."""
 
@@ -384,6 +405,8 @@ class RunResult(BaseModel):
     failed: int
     unjudged: int
     latency_ms: dict[str, float | None]
+    #: The agent's own retrieval time per answer, when it reported any; None when it did not.
+    retrieval: ReportedTiming | None = None
     cases: list[CaseOutcome]
 
 

@@ -58,7 +58,7 @@ def test_chat_replay_feeds_every_turn_through_the_ask_request():
 
 def test_the_answer_is_extracted_with_jmespath():
     _, transport = recording({"out": [{"text": "blue"}]})
-    assert connector(transport, ask={"path": "/a", "answer": "out[0].text"}).ask(ASK) == "blue"
+    assert connector(transport, ask={"path": "/a", "answer": "out[0].text"}).ask(ASK).text == "blue"
 
 
 @pytest.mark.parametrize(("reply", "status", "match"), [
@@ -113,7 +113,7 @@ def test_a_429_is_waited_out_on_the_shared_gate_then_sent_again(refusals, retry_
     fields = {"base_url": "http://agent", "feed": "chat",
               "ask": {"path": "/ask", "answer": "answer", "body": {"q": "{question}"}}}
     agent = HttpConnector(HttpSpec.model_validate(fields), transport=transport, gate=gate)
-    assert agent.ask(ASK) == "A" and len(sent) == refusals + 1
+    assert agent.ask(ASK).text == "A" and len(sent) == refusals + 1
     assert clock.slept == pauses
 
 
@@ -151,7 +151,7 @@ def test_the_openai_preset_scopes_every_request_by_session_id():
     mapping = preset_mapping("openai-chat", {"model": "m"})
     chat = connector(transport, **mapping, vars={"model": "m"})
     chat.feed(FEED)
-    assert chat.ask(ASK) == "blue"
+    assert chat.ask(ASK).text == "blue"
     assert {s["body"]["user"] for s in seen} == {"k1"}
     assert [s["body"]["metadata"]["memrank_op"] for s in seen] == ["feed", "feed", "ask"]
 
@@ -159,3 +159,14 @@ def test_the_openai_preset_scopes_every_request_by_session_id():
 def test_a_preset_names_the_variables_it_needs():
     with pytest.raises(ConnectorConfigError, match="needs model"):
         preset_mapping("openai-chat", {})
+
+
+@pytest.mark.parametrize(("reply", "reported"), [
+    ({"memrank_retrieval_ms": 42}, 42.0),
+    ({}, None),  # an agent that sends none reported none, never 0
+])
+def test_the_openai_preset_reads_the_agents_own_retrieval_time(reply, reported):
+    _, transport = recording({"choices": [{"message": {"content": "blue"}}], **reply})
+    mapping = preset_mapping("openai-chat", {"model": "m"})
+    answer = connector(transport, **mapping, vars={"model": "m"}).ask(ASK)
+    assert (answer.text, answer.retrieval_ms) == ("blue", reported)

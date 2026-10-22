@@ -21,6 +21,7 @@ agent may have seen the request; it is recorded as a failed step and never retri
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from memrank.errors import MemrankError
@@ -58,13 +59,34 @@ class AgentRateLimited(AgentError):
         self.retry_after_s = retry_after_s
 
 
+@dataclass(frozen=True)
+class Answer:
+    """An agent's answer with what it reported about producing it.
+
+    ``retrieval_ms`` is the agent's own claim about its memory retrieval for this answer, None
+    when it made none. memrank cannot check it, so it is kept apart from the time memrank
+    measures around the call (:func:`memrank.loop.run.execute`).
+    """
+
+    text: str
+    retrieval_ms: float | None = None
+
+
+def answer_of(reply: str | Answer) -> Answer:
+    """What ``Connector.ask`` returned, as an :class:`Answer` either way."""
+    return reply if isinstance(reply, Answer) else Answer(reply)
+
+
 class Connector(Protocol):
-    """Carries steps to one agent. Each method either succeeds or raises one of the above."""
+    """Carries steps to one agent. Each method either succeeds or raises one of the above.
+
+    ``ask`` returns the answer text, or an :class:`Answer` when the agent reports more.
+    """
 
     def reset(self, step: Step) -> None: ...
 
     def feed(self, step: Step) -> None: ...
 
-    def ask(self, step: Step) -> str: ...
+    def ask(self, step: Step) -> str | Answer: ...
 
     def close(self) -> None: ...

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from html import escape
 
+from memrank.loop.readout import duration, retrieval
 from memrank.service.protocol import Interval, QuestionOutcome, RunResult
 
 _STYLE = """
@@ -49,6 +50,11 @@ _METRICS = (
     ("Latency", "Time the agent took per call, measured by memrank around each request. "
                 "p50 is the typical call; p95 is a slow one."),
 )
+
+#: Explained only on a run whose agent reported its retrieval time.
+_RETRIEVAL_METRIC = ("Retrieval time", "Time the agent says its memory retrieval took per "
+                     "answer, as it reported it. memrank does not measure it and cannot check "
+                     "it; it is part of the answer time memrank measures, not added to it.")
 
 
 def _pct(value: float | None) -> str:
@@ -96,11 +102,20 @@ def _reliability(result: RunResult) -> str:
     return (f"<h2>Failures and speed</h2><p>{result.failed} of {result.questions} questions "
             f"failed ({_pct(result.failure_rate)}). Answering took {_seconds(latency.get('ask_p50'))}"
             f" typically and {_seconds(latency.get('ask_p95'))} when slow; loading a case's "
-            f"history took {_seconds(latency.get('feed_p50'))} typically.</p>")
+            f"history took {_seconds(latency.get('feed_p50'))} typically.{_retrieval(result)}</p>")
 
 
-def _explained() -> str:
-    rows = "".join(f"<tr><th>{name}</th><td>{text}</td></tr>" for name, text in _METRICS)
+def _retrieval(result: RunResult) -> str:
+    """The agent's reported retrieval time as one more sentence; nothing when it reported none."""
+    if result.retrieval is None:
+        return ""
+    words = retrieval(result.retrieval)
+    return f" {escape(words[0].upper() + words[1:])}."
+
+
+def _explained(result: RunResult) -> str:
+    metrics = _METRICS if result.retrieval is None else (*_METRICS, _RETRIEVAL_METRIC)
+    rows = "".join(f"<tr><th>{name}</th><td>{text}</td></tr>" for name, text in metrics)
     return f"<h2>What these numbers mean</h2><table>{rows}</table>"
 
 
@@ -130,8 +145,19 @@ def _verdict(q: QuestionOutcome) -> str:
 def _row(q: QuestionOutcome) -> str:
     cells = (escape(q.case_id), escape(q.category or ""), escape(q.question),
              escape(q.answer or ""), escape(" | ".join(q.reference)), _verdict(q),
-             _seconds(q.elapsed_ms))
+             _time(q))
     return "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+
+
+def _time(q: QuestionOutcome) -> str:
+    """memrank's time for the answer, with the agent's retrieval time when it reported one.
+
+    Retrieval is often a few milliseconds, so it is read in the run-level line's unit rather
+    than as seconds, where a 7 ms lookup would round to "0.01 s".
+    """
+    if q.retrieval_ms is None:
+        return _seconds(q.elapsed_ms)
+    return f"{_seconds(q.elapsed_ms)} (retrieval {duration(q.retrieval_ms)})"
 
 
 def _questions(result: RunResult) -> str:
@@ -144,7 +170,8 @@ def _questions(result: RunResult) -> str:
 def render(result: RunResult) -> str:
     """The whole report as one HTML document."""
     body = "".join((_header(result), _headline(result), _categories(result),
-                    _reliability(result), _explained(), _identity(result), _questions(result)))
+                    _reliability(result), _explained(result), _identity(result),
+                    _questions(result)))
     title = escape(f"{result.evaluation} x {result.agent.name}")
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport "
             f"content='width=device-width,initial-scale=1'><title>{title}</title>"

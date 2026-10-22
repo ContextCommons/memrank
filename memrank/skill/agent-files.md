@@ -33,6 +33,9 @@ ask: [python3, /abs/path/agent.py, ask, "{session_id}", "{question}"]  # answer 
   stderr. Keep stdout for the answer only.
 - Variables: `{session_id}`, `{case_id}`, `{python}`; in `feed` also `{transcript}`; in `ask`
   also `{question}`, `{question_id}`, `{timestamp}`.
+- Optional: `ask_json: {answer: answer, retrieval_ms: retrieval_ms}` makes `ask` print one JSON
+  object instead, with the answer and the agent's own retrieval time read from it by JMESPath
+  (see `ask.retrieval_ms` under http). Without `ask_json`, stdout is the answer as plain text.
 
 ## openai-chat: an OpenAI Chat Completions server
 
@@ -49,7 +52,9 @@ start:                                  # optional; without it the server must b
 Each past session is POSTed to `/v1/chat/completions` as one request with
 `"user": "<session_id>"` and `"metadata": {"memrank_op": "feed"}` (the agent may skip replying
 to these); each question is a request under the same `user` with `"memrank_op": "ask"`, and the
-answer is `choices[0].message.content`. `start.argv` may use `{python}` and `{evaluation}` (the
+answer is `choices[0].message.content`. To report how long its memory retrieval took for an
+answer, the agent adds a top-level `"memrank_retrieval_ms": <milliseconds>` to that completion
+(see `ask.retrieval_ms` under http); without it, none is reported. `start.argv` may use `{python}` and `{evaluation}` (the
 run's eval ref, e.g. `beam:100k`, or its evaluation file's path), for a server that answers
 differently per evaluation; no other variable is available there.
 
@@ -73,6 +78,10 @@ ask: {path: /ask, body: {session: "{session_id}", q: "{question}"}, answer: answ
 - `feed: chat` instead replays every past turn through the `ask` request, for an agent that only
   chats; the replies are discarded.
 - `ask.answer` is a JMESPath expression locating the answer string in the JSON response.
+- `ask.retrieval_ms` (optional) is a JMESPath expression locating how long the agent's memory
+  retrieval took for this answer, in milliseconds, e.g. `meta.retrieval_ms`. Memrank records it
+  beside the answer time it measures, as the agent's own report. An answer where it finds
+  nothing counts as not reported; a value that is not a non-negative number fails the answer.
 - `start` works as in openai-chat. Every call also has `{session_id}`, `{case_id}` and the file's
   own `vars`.
 

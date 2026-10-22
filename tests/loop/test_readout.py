@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from memrank.loop import readout
-from memrank.service.protocol import Interval, QuestionOutcome
+from memrank.service.protocol import Interval, QuestionOutcome, ReportedTiming
 from memrank.service.scoring import apply_verdicts
 from tests.service.test_scoring import FAIL, PASS, judged_by, recorded
 
@@ -154,3 +154,12 @@ def test_speed_is_typical_and_slow_in_human_units():
                                      "loading the history 3 min 29 s typical")
     assert readout.speed(result.model_copy(update={"latency_ms": {}})) == \
         "not measured: no step was timed"
+
+
+def test_speed_adds_the_agents_retrieval_time_only_when_it_reported_one():
+    result = _judged().model_copy(update={"latency_ms": {"ask_p50": 1700.0, "ask_p95": 3200.0}})
+    assert "retrieval" not in readout.speed(result)
+    reported = ReportedTiming(p50_ms=180.0, p95_ms=420.0, reported=3, answers=4)
+    assert readout.speed(result.model_copy(update={"retrieval": reported})) == (
+        "answers 1.7 s typical, 3.2 s slow (1 in 20); retrieval 180 ms typical, 420 ms slow, "
+        "reported by your agent, 3 of 4 questions")

@@ -15,11 +15,18 @@
 
 Each operation is an argv template, run once per step without a shell, so an argument is
 never re-parsed. Feed writes the case's transcript to the program's stdin; ask reads the
-answer from its stdout. A non-zero exit is a failure, with the tail of stderr as its reason.
+answer from its stdout -- as plain text, or, when the spec has ``ask_json``, as a JSON object the
+answer and the agent's own retrieval time are read from by JMESPath::
+
+    ask: ["{python}", agent.py, ask, "{session_id}", "{question}"]
+    ask_json: {answer: answer, retrieval_ms: timings.retrieval_ms}
+
+A non-zero exit is a failure, with the tail of stderr as its reason.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -28,10 +35,21 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from memrank.connect import template
-from memrank.connect.base import AgentError, ConnectorConfigError
+from memrank.connect.base import AgentError, Answer, ConnectorConfigError
+from memrank.connect.reply import ReplyReader
 from memrank.service.protocol import Step
 
 _STDERR_TAIL_CHARS = 500
+
+
+class JsonReply(BaseModel):
+    """Where the answer, and optionally the retrieval time, are in the ask command's JSON."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(description="JMESPath to the answer")
+    retrieval_ms: str | None = Field(
+        default=None, description="JMESPath to the agent's own retrieval time, in milliseconds")
 
 
 class CommandSpec(BaseModel):
@@ -40,6 +58,8 @@ class CommandSpec(BaseModel):
     reset: list[str] | None = None
     feed: list[str] = Field(min_length=1)
     ask: list[str] = Field(min_length=1)
+    #: Opt in to a structured ask output; without it stdout is the answer, as plain text.
+    ask_json: JsonReply | None = None
     timeout_s: float = Field(default=600.0, gt=0)
     vars: dict[str, Any] = Field(default_factory=dict)
 
@@ -53,6 +73,8 @@ class CommandConnector:
             if argv is not None and shutil.which(program) is None:
                 raise ConnectorConfigError(f"agent command {program!r} is not on PATH")
         self.spec = spec
+        reply = spec.ask_json
+        self._reply = None if reply is None else ReplyReader(reply.answer, reply.retrieval_ms)
 
     def close(self) -> None:
         """Nothing is held between steps."""
@@ -77,5 +99,13 @@ class CommandConnector:
         variables = template.case_vars(step, self.spec.vars)
         self._run(self.spec.feed, variables, stdin=variables["transcript"])
 
-    def ask(self, step: Step) -> str:
-        return self._run(self.spec.ask, template.ask_vars(step, self.spec.vars)).strip()
+    def ask(self, step: Step) -> Answer:
+        stdout = self._run(self.spec.ask, template.ask_vars(step, self.spec.vars))
+        if self._reply is None:
+            return Answer(stdout.strip())
+        try:
+            payload = json.loads(stdout)
+        except ValueError as exc:
+            raise AgentError("the ask command's output is not JSON, as the spec's ask_json says "
+                             f"it is: {stdout[:_STDERR_TAIL_CHARS]!r}") from exc
+        return self._reply.read(payload, "the ask command's output")

@@ -11,7 +11,7 @@ import click
 import pytest
 
 from memrank.benchmarks.answer_prompts import LOCOMO_READER, LONGMEMEVAL_READER
-from memrank.connect.base import AgentError, AgentUnreachable
+from memrank.connect.base import AgentError, AgentUnreachable, Answer
 from memrank.connect.http import HttpConnector, HttpSpec
 from memrank.connect.presets import preset_mapping
 from memrank.connect.probe import leak_probe
@@ -185,6 +185,15 @@ def test_a_reached_failure_is_recorded_once_and_not_retried():
     agent = Flaky(down=0, fail=True)
     result = execute(agent, ASK, quiet([]))
     assert agent.calls == 1 and result.error == "500"
+
+
+def test_the_agents_retrieval_time_is_recorded_beside_memranks_own_clock():
+    class Reports:
+        def ask(self, step: Step) -> Answer:
+            return Answer("ok", retrieval_ms=180.0)
+
+    result = execute(Reports(), ASK, quiet([]))
+    assert (result.answer, result.retrieval_ms, result.elapsed_ms) == ("ok", 180.0, 1000.0)
 
 
 class GoesDown:

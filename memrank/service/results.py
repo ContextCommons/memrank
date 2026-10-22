@@ -33,6 +33,7 @@ from memrank.service.protocol import (
     Interval,
     Op,
     QuestionOutcome,
+    ReportedTiming,
     RunCreate,
     RunResult,
 )
@@ -70,6 +71,7 @@ def _question(case: Case, index: int, asked: Recorded | None,
         outcome.status, outcome.error = "failed", asked.result.error
     else:
         outcome.status, outcome.answer = "not_judged", asked.result.answer
+        outcome.retrieval_ms = asked.result.retrieval_ms
     return outcome
 
 
@@ -100,6 +102,20 @@ def _latency(state: RunState) -> dict[str, float | None]:
             for op in (Op.FEED, Op.ASK) for name, fraction in (("p50", 0.5), ("p95", 0.95))}
 
 
+def _retrieval(state: RunState) -> ReportedTiming | None:
+    """The agent's reported retrieval time over the answers that carried it; None if none did.
+
+    Over each question's last recorded answer, as the questions themselves are, so a retried
+    question counts once.
+    """
+    answers = [r.result for r in _asks(state).values() if r.result.answer is not None]
+    reported = [a.retrieval_ms for a in answers if a.retrieval_ms is not None]
+    p50, p95 = _percentile(reported, 0.5), _percentile(reported, 0.95)
+    if p50 is None or p95 is None:
+        return None
+    return ReportedTiming(p50_ms=p50, p95_ms=p95, reported=len(reported), answers=len(answers))
+
+
 def _identity(request: RunCreate, plan: Plan) -> Identity:
     return Identity(
         evaluation=plan.evaluation, dataset_version=plan.dataset_version,
@@ -117,5 +133,6 @@ def build_result(run_id: str, *, request: RunCreate, plan: Plan, state: RunState
         identity=_identity(request, plan), status="complete", judged=False,
         notice=AWAITING_JUDGE if request.judge else NOT_JUDGED, score=_NO_SCORE,
         per_category={}, failure_rate=0.0, questions=0, failed=0, unjudged=0,
-        latency_ms=_latency(state), cases=[_case(case, state) for case in plan.cases])
+        latency_ms=_latency(state), retrieval=_retrieval(state),
+        cases=[_case(case, state) for case in plan.cases])
     return summarize(result)

@@ -37,7 +37,7 @@ def test_feed_writes_the_transcript_and_ask_reads_the_answer(agent):
     agent.feed(Step(op=Op.FEED, case_id="c", session_id="k", sessions=[session]))
     answer = agent.ask(Step(op=Op.ASK, case_id="c", session_id="k",
                             question=Question(id="q", text="colour?")))
-    assert answer == "remembered: Ann: blue car / colour?"
+    assert answer.text == "remembered: Ann: blue car / colour?"
 
 
 def test_a_failing_program_is_an_agent_error_with_its_stderr(agent):

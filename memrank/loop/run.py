@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from memrank.connect.base import AgentError, AgentUnreachable, Connector
+from memrank.connect.base import AgentError, AgentUnreachable, Answer, Connector, answer_of
 from memrank.connect.probe import leak_probe
 from memrank.connect.process import started
 from memrank.connect.spec import AgentSpec
@@ -112,7 +112,7 @@ def execute(connector: Connector, step: Step, tools: Instruments,
     call = getattr(connector, step.op.value)
     timing: dict[str, float] = {}
 
-    def attempt() -> str | None:
+    def attempt() -> str | Answer | None:
         timing["start"] = tools.clock()  # only the attempt that reached the agent is timed
         outcome = call(step)
         timing["end"] = tools.clock()
@@ -125,7 +125,8 @@ def execute(connector: Connector, step: Step, tools: Instruments,
         return StepResult(error=str(exc), elapsed_ms=_ms(timing["start"], tools.clock()))
     elapsed = _ms(timing["start"], timing["end"])
     if step.op is Op.ASK:
-        return StepResult(answer=outcome or "", elapsed_ms=elapsed)
+        answer = answer_of(outcome or "")
+        return StepResult(answer=answer.text, retrieval_ms=answer.retrieval_ms, elapsed_ms=elapsed)
     return StepResult(ok=True, elapsed_ms=elapsed)
 
 
