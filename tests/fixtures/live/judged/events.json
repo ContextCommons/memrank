@@ -1,0 +1,381 @@
+[
+  {
+    "seq": 1,
+    "kind": "judging",
+    "identity": {
+      "judge": "anthropic:claude-haiku-4-5",
+      "judge_provider": "anthropic",
+      "judge_model": "claude-haiku-4-5",
+      "judge_endpoint": null,
+      "judge_settings": {
+        "max_tokens": 1024,
+        "max_tokens_field": "max_tokens"
+      },
+      "judge_source": "run"
+    },
+    "judge_samples": 1,
+    "judge_prompt_version": "2026-09-29.1"
+  },
+  {
+    "seq": 2,
+    "kind": "answer",
+    "question_id": "c1_q0",
+    "case_id": "c1",
+    "position": 0,
+    "answer_ref": "s3",
+    "outcome": {
+      "case_id": "c1",
+      "question_id": "c1_q0",
+      "question": "What colour is Ann's car?",
+      "reference": [
+        "blue"
+      ],
+      "category": "single-hop",
+      "grading": {
+        "gold_answers": [
+          "blue"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "blue",
+      "error": null,
+      "elapsed_ms": 120.0,
+      "retrieval_ms": 8.0,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 3,
+    "kind": "verdict",
+    "question_id": "c1_q0",
+    "answer_ref": "s3",
+    "status": "judged",
+    "score": 1.0,
+    "passed": true,
+    "rationale": "matches",
+    "error": null,
+    "probability": null,
+    "decision": null
+  },
+  {
+    "seq": 4,
+    "kind": "answer",
+    "question_id": "c1_q0",
+    "case_id": "c1",
+    "position": 0,
+    "answer_ref": "s7",
+    "outcome": {
+      "case_id": "c1",
+      "question_id": "c1_q0",
+      "question": "What colour is Ann's car?",
+      "reference": [
+        "blue"
+      ],
+      "category": "single-hop",
+      "grading": {
+        "gold_answers": [
+          "blue"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "a blue car",
+      "error": null,
+      "elapsed_ms": 140.0,
+      "retrieval_ms": 9.5,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 5,
+    "kind": "answer",
+    "question_id": "c1_q1",
+    "case_id": "c1",
+    "position": 1,
+    "answer_ref": "s8",
+    "outcome": {
+      "case_id": "c1",
+      "question_id": "c1_q1",
+      "question": "When did Ann buy it?",
+      "reference": [
+        "May 2023"
+      ],
+      "category": "temporal",
+      "grading": {
+        "gold_answers": [
+          "May 2023"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "June",
+      "error": null,
+      "elapsed_ms": 110.0,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 6,
+    "kind": "verdict",
+    "question_id": "c1_q0",
+    "answer_ref": "s7",
+    "status": "judged",
+    "score": 1.0,
+    "passed": true,
+    "rationale": "matches",
+    "error": null,
+    "probability": null,
+    "decision": null
+  },
+  {
+    "seq": 7,
+    "kind": "answer",
+    "question_id": "c2_q0",
+    "case_id": "c2",
+    "position": 2,
+    "answer_ref": "s10",
+    "outcome": {
+      "case_id": "c2",
+      "question_id": "c2_q0",
+      "question": "Where does Bo live?",
+      "reference": [
+        "Lima"
+      ],
+      "category": "single-hop",
+      "grading": {
+        "gold_answers": [
+          "Lima"
+        ],
+        "kind": "qa"
+      },
+      "status": "failed",
+      "answer": null,
+      "error": "feed failed: HTTP 500 from the agent",
+      "elapsed_ms": null,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 8,
+    "kind": "answer",
+    "question_id": "c2_q1",
+    "case_id": "c2",
+    "position": 3,
+    "answer_ref": "s10",
+    "outcome": {
+      "case_id": "c2",
+      "question_id": "c2_q1",
+      "question": "What is Bo's dog called?",
+      "reference": [
+        "Rex"
+      ],
+      "category": "multi-hop",
+      "grading": {
+        "gold_answers": [
+          "Rex"
+        ],
+        "kind": "qa"
+      },
+      "status": "failed",
+      "answer": null,
+      "error": "feed failed: HTTP 500 from the agent",
+      "elapsed_ms": null,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 9,
+    "kind": "verdict",
+    "question_id": "c1_q1",
+    "answer_ref": "s8",
+    "status": "judged",
+    "score": 0.0,
+    "passed": false,
+    "rationale": "differs",
+    "error": null,
+    "probability": null,
+    "decision": null
+  },
+  {
+    "seq": 10,
+    "kind": "answer",
+    "question_id": "c3_q0",
+    "case_id": "c3",
+    "position": 4,
+    "answer_ref": "s13",
+    "outcome": {
+      "case_id": "c3",
+      "question_id": "c3_q0",
+      "question": "Which city did Cy visit?",
+      "reference": [
+        "Paris"
+      ],
+      "category": "single-hop",
+      "grading": {
+        "gold_answers": [
+          "Paris"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "Paris",
+      "error": null,
+      "elapsed_ms": 90.0,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 11,
+    "kind": "answer",
+    "question_id": "c3_q1",
+    "case_id": "c3",
+    "position": 5,
+    "answer_ref": "s14",
+    "outcome": {
+      "case_id": "c3",
+      "question_id": "c3_q1",
+      "question": "Which day was the trip?",
+      "reference": [
+        "Tuesday"
+      ],
+      "category": "temporal",
+      "grading": {
+        "gold_answers": [
+          "Tuesday"
+        ],
+        "kind": "qa"
+      },
+      "status": "failed",
+      "answer": null,
+      "error": "agent timed out",
+      "elapsed_ms": 30000.0,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 12,
+    "kind": "answer",
+    "question_id": "c3_q0",
+    "case_id": "c3",
+    "position": 4,
+    "answer_ref": "s18",
+    "outcome": {
+      "case_id": "c3",
+      "question_id": "c3_q0",
+      "question": "Which city did Cy visit?",
+      "reference": [
+        "Paris"
+      ],
+      "category": "single-hop",
+      "grading": {
+        "gold_answers": [
+          "Paris"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "Paris, France",
+      "error": null,
+      "elapsed_ms": 95.0,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 13,
+    "kind": "answer",
+    "question_id": "c3_q1",
+    "case_id": "c3",
+    "position": 5,
+    "answer_ref": "s19",
+    "outcome": {
+      "case_id": "c3",
+      "question_id": "c3_q1",
+      "question": "Which day was the trip?",
+      "reference": [
+        "Tuesday"
+      ],
+      "category": "temporal",
+      "grading": {
+        "gold_answers": [
+          "Tuesday"
+        ],
+        "kind": "qa"
+      },
+      "status": "not_judged",
+      "answer": "Tuesday",
+      "error": null,
+      "elapsed_ms": 100.0,
+      "retrieval_ms": null,
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "probability": null,
+      "decision": null
+    }
+  },
+  {
+    "seq": 14,
+    "kind": "verdict",
+    "question_id": "c3_q0",
+    "answer_ref": "s18",
+    "status": "unjudged",
+    "score": null,
+    "passed": null,
+    "rationale": null,
+    "error": "judge call failed: HTTP 529 overloaded",
+    "probability": null,
+    "decision": null
+  },
+  {
+    "seq": 15,
+    "kind": "verdict",
+    "question_id": "c3_q1",
+    "answer_ref": "s19",
+    "status": "judged",
+    "score": 1.0,
+    "passed": true,
+    "rationale": "matches",
+    "error": null,
+    "probability": null,
+    "decision": null
+  }
+]

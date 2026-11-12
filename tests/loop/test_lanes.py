@@ -9,11 +9,10 @@ import pytest
 
 from memrank.connect.base import AgentUnreachable
 from memrank.connect.spec import AgentSpec
-from memrank.loop import run as loop_run
 from memrank.loop.lanes import Lanes, _lane
 from memrank.loop.run import RunAborted, RunOptions, run_agent
 from memrank.service.protocol import AgentRef, Op, RunResult, Step, StepResult
-from tests.loop.conftest import OrgApi, run_id_of
+from tests.loop.conftest import OrgApi, run_id_of, stub_grading
 from tests.loop.test_run import quiet
 
 #: A guard against a hang if lanes did not run side by side -- never a condition under test.
@@ -72,7 +71,7 @@ def spec(agent: Memory) -> AgentSpec:
 @pytest.fixture(autouse=True)
 def org(monkeypatch) -> OrgApi:
     fake = OrgApi()
-    monkeypatch.setattr(loop_run, "judge", lambda result, key, judged=None: result)
+    stub_grading(monkeypatch)
     return fake
 
 

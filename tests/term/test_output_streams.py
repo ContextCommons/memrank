@@ -164,11 +164,11 @@ def test_storing_a_secret_says_nothing_on_stdout(wallet):
 
 
 def test_setting_a_default_says_nothing_on_stdout(wallet):
-    result = runner.invoke(app, ["config", "set", "defaults.on", "local"])
+    result = runner.invoke(app, ["config", "set", "sync.auto", "false"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert "defaults.on = local" in result.stderr
+    assert "sync.auto = false" in result.stderr
 
 
 def test_a_listing_puts_its_rows_on_stdout_and_its_hints_on_stderr(wallet):
@@ -176,7 +176,7 @@ def test_a_listing_puts_its_rows_on_stdout_and_its_hints_on_stderr(wallet):
     result = runner.invoke(app, ["config", "ls"])
 
     assert result.exit_code == 0, result.output
-    assert "defaults.on" in result.stdout
+    assert "sync.auto" in result.stdout
 
 
 def test_json_output_is_alone_on_stdout(wallet):

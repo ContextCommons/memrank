@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""Deprecated: the cloud and sweep orchestration behind `memrank submit`. Evaluate an agent with
+"""Deprecated: the cloud and sweep orchestration behind the removed `memrank submit`. Evaluate an agent with
 `memrank run` instead; see the README. `sweep._mirror_to_mlflow` is reached lazily by
 `runs/reconcile` and does not warn.
 

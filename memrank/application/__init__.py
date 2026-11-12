@@ -1,4 +1,4 @@
-"""Deprecated: the operations behind `memrank submit` and the MCP server. Evaluate an agent with
+"""Deprecated: the operations behind the removed `memrank submit` and the MCP server. Evaluate an agent with
 `memrank run` instead; see the README. `catalogs.get_eval` is used by the current path
 (`cli/evals`) and does not warn.
 

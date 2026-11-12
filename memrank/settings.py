@@ -64,10 +64,6 @@ class Setting:
 SETTINGS: tuple[Setting, ...] = (
     Setting("defaults.org", "MEMRANK_ORG", None,
             "org a submission runs under (and is recorded against)"),
-    # Shipped `none`, NOT `cloud`: logged out, everything must still work locally. `auth login`
-    # writes `cloud`, so a machine that signed in is cloud-first and a fresh clone is not.
-    Setting("defaults.on", "MEMRANK_ON", "none",
-            "where submissions run: none | local | cloud"),
     # Defaulted, unlike the others, because an installed CLI has no env file: without it the
     # first command a new user runs fails on an environment variable they have never heard of.
     # This is not the no-fallbacks rule bending -- that rule stops a MISSING setting being
@@ -77,15 +73,13 @@ SETTINGS: tuple[Setting, ...] = (
     #
     # PRODUCTION since 2026-08-25, when api.memrank.ai went live. It was api-staging until
     # then because there was no other option. The consequence worth knowing rather than
-    # discovering: an already-installed CLI keeps talking to staging until it is upgraded
-    # (the API's cli_contract check bounds what that can break, but does not redirect it).
+    # discovering: an already-installed CLI keeps talking to staging until it is upgraded.
     #
-    # `submit --on cloud` against prod works, and is BYOK: a submitted run spends the
-    # credential of the ORG it is recorded against, resolved from accounts.org_secrets and
-    # injected by ARN (memrank/api/runs.py, `"credentials": "org"`), so an org with no
-    # provider key stored cannot launch one. The shared /memrank/prod/* provider keys are
-    # placeholders and nothing on the submission path reads them; do not read them as the
-    # thing a cloud run spends (tech-debt.md).
+    # A hosted run is BYOK: it spends the credential of the ORG it is recorded against,
+    # resolved from accounts.org_secrets and injected by ARN (memrank/api/runs.py,
+    # `"credentials": "org"`), so an org with no provider key stored cannot launch one. The
+    # shared /memrank/prod/* provider keys are placeholders and nothing on the submission path
+    # reads them; do not read them as the thing a cloud run spends (tech-debt.md).
     Setting("api.url", "MEMRANK_API_URL", "https://api.memrank.ai",
             "base URL of the memrank API this CLI talks to"),
     # Off by default: the OS keychain is better at rest, but memrank runs as a Python entry

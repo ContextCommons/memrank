@@ -9,6 +9,7 @@ through the error path again fails here. ``test_run_endings`` covers every other
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
 
@@ -45,6 +46,12 @@ def api(runs: int = 200, resolved: int | dict = 200, saved: list | None = None) 
         if path.endswith("/secrets") and saved is not None:
             saved.append(request.content)
             return httpx.Response(201, json={})
+        if path.endswith("/events"):  # every live upload is taken whole
+            to_seq = json.loads(request.content)["to_seq"]
+            return httpx.Response(200, json={"through_seq": to_seq, "state": "running"})
+        if request.method == "PUT" and not path.endswith("/answers"):  # a run registered
+            live = {"url": f"http://api{path}/events", "through_seq": 0}
+            return httpx.Response(runs, json={"runs": [], "live": live})
         return httpx.Response(runs, json={"runs": []})
 
     return httpx.Client(base_url="http://api", transport=httpx.MockTransport(handle))

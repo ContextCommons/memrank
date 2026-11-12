@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""Deprecated: placement, the engine-hosting path behind `memrank submit`. Evaluate an agent with
+"""Deprecated: placement, the engine-hosting path behind the removed `memrank submit`. Evaluate an agent with
 `memrank run` instead; see the README. `run_api_client` and `hosted` are used by the current
 path (`loop/`, `cli/runs*`, `runs/`) and do not warn.
 

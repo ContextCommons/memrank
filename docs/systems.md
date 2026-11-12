@@ -244,7 +244,7 @@ There are two ways to take that step.
 | What you write | a Python `memrank.Memory` subclass, in this repo | a program serving [the translator contract](system-contract.md), in any language |
 | Where it lives | `memrank/adapters/` | your repository |
 | Needs a PR? | yes, plus entries in ~8 tables and 6 test lists | no |
-| Works today on | every placement, including cloud | `--on local`, from a source checkout |
+| Works today on | every placement, including cloud | local placement, from a source checkout |
 | Evidence class | artifact-backed, publishable | `development_observation`, `publishable: false` |
 | Verify with | `pytest tests/live/conformance/test_adapter_contract.py` | `memrank targets verify <ref>` |
 
@@ -270,7 +270,8 @@ REGISTRY["myengine"] = MyAdapter
 ### 4. Make it a target (stack engines)
 
 A registered class alone is reachable from Python -- `memrank.system("myengine")` -- against a
-backend you started yourself. For `memrank submit myengine ... --on local|cloud` to launch the engine, every
+backend you started yourself. For memrank to launch the engine itself -- a path only the removed `memrank submit` used;
+evaluate with `memrank run` instead -- every
 configuration table below needs an entry -- each fails loudly, or is covered by an enumeration test, when
 missing. `hindsight` is the worked example to mirror: its image is the vendor's own
 (`ghcr.io/vectorize-io/hindsight`, anonymous pull), so every file below is one you can read and
@@ -346,11 +347,7 @@ components:
 The command is split into argv and executed directly; memrank adds no implicit shell. Use an
 explicit `sh -lc '...'` only when shell behavior is genuinely required. `{port}` expands to the
 target's declared `network.port`. The optional `requires` paths give an early wrong-checkout
-error. The developer then runs:
-
-```bash
-memrank submit myengine:dev demo --on none
-```
+error. (`memrank submit`, which ran it by name, has been removed; evaluate with `memrank run` instead -- see the [README](../README.md#first-run).)
 
 Endpoint operations still belong in the named adapter. The target owns launch and readiness, and
 the engine repository needs no memrank descriptor, Dockerfile or publishing workflow. There is no

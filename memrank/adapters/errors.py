@@ -147,8 +147,7 @@ def unreachable_remedy(base_url_env: str | None) -> str:
     settings = (f"the {base_url_env} environment variable or the adapter's `base_url` argument"
                 if base_url_env else "the adapter's `base_url` argument")
     return (f"memrank sent that request and nothing answered. Point it somewhere else with "
-            f"{settings}, or have memrank start a disposable engine of its own by re-running "
-            f"with `--on local`.")
+            f"{settings}, or start the engine and re-run.")
 
 
 def safe_location(url: httpx.URL) -> str:

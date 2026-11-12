@@ -32,13 +32,14 @@ def store(monkeypatch, tmp_path):
 
 
 def test_an_unset_key_reports_its_shipped_default(store):
-    assert settings.resolve("defaults.on") == ("none", settings.DEFAULT)
+    assert settings.resolve("sync.auto") == ("true", settings.DEFAULT)
 
 
-def test_placement_ships_local_not_cloud(store):
-    """Logged out, everything must still work. A shipped cloud default would make a fresh
-    clone's first submission fail on authentication -- `auth login` writes cloud instead."""
-    assert settings.get("defaults.on") == "none"
+def test_placement_is_no_longer_a_setting(store):
+    """`defaults.on` chose where `memrank submit` placed a run; with submit removed (ATO-2366)
+    nothing reads it, so it cannot be set -- a stored key nothing reads never applies."""
+    with pytest.raises(settings.UnknownSetting):
+        settings.put("defaults.on", "cloud")
 
 
 def test_auto_sync_ships_on(store):
@@ -76,9 +77,9 @@ def test_the_file_is_private_to_its_owner(store):
 
 def test_writes_accumulate_rather_than_replace(store):
     settings.put("defaults.org", "acme")
-    settings.put("defaults.on", "cloud")
+    settings.put("sync.auto", "false")
     assert settings.get("defaults.org") == "acme"
-    assert settings.get("defaults.on") == "cloud"
+    assert settings.get("sync.auto") == "false"
 
 
 def test_resolved_covers_every_key(store):

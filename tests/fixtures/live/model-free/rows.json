@@ -1,0 +1,79 @@
+{
+  "answers": [
+    {
+      "question_id": "m1_q0",
+      "case_id": "m1",
+      "position": 0,
+      "question": "Reply with the code word.",
+      "reference": [
+        "swordfish"
+      ],
+      "grading": {
+        "grader": "exact",
+        "gold_answers": [
+          "swordfish"
+        ]
+      },
+      "category": "recall",
+      "status": "answered",
+      "answer": "swordfish",
+      "error": null,
+      "elapsed_ms": 12.0,
+      "retrieval_ms": null
+    },
+    {
+      "question_id": "m1_q1",
+      "case_id": "m1",
+      "position": 1,
+      "question": "Reply with the second code word.",
+      "reference": [
+        "marlin"
+      ],
+      "grading": {
+        "grader": "exact",
+        "gold_answers": [
+          "marlin"
+        ]
+      },
+      "category": "recall",
+      "status": "answered",
+      "answer": "tuna",
+      "error": null,
+      "elapsed_ms": 11.0,
+      "retrieval_ms": null
+    }
+  ],
+  "judging": {
+    "origin": "live",
+    "judge": null,
+    "judge_provider": null,
+    "judge_model": null,
+    "judge_endpoint": null,
+    "judge_settings": null,
+    "judge_prompt_version": null,
+    "judge_samples": 0,
+    "judge_source": "run"
+  },
+  "verdicts": [
+    {
+      "question_id": "m1_q0",
+      "status": "judged",
+      "score": 1.0,
+      "passed": true,
+      "rationale": "exact match",
+      "error": null,
+      "probability": null,
+      "decision": null
+    },
+    {
+      "question_id": "m1_q1",
+      "status": "judged",
+      "score": 0.0,
+      "passed": false,
+      "rationale": "no exact match",
+      "error": null,
+      "probability": null,
+      "decision": null
+    }
+  ]
+}

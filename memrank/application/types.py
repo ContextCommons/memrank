@@ -26,7 +26,7 @@ class ModelRef(ContractModel):
 
 
 class JudgeSettings(ContractModel):
-    """The judge controls currently exposed by ``memrank submit``."""
+    """The judge controls a planned experiment exposes."""
 
     #: ``None`` means "ask the eval" -- on where the judge is the benchmark's only quality metric
     #: (locomo, longmemeval, beam), off where it scores itself. Resolved at the door that received

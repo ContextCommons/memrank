@@ -14,9 +14,7 @@
 """Memrank CLI + orchestrator.
 
 Entry point:
-    memrank submit mem0 locomo:smoke --seed 42
-    memrank submit atomicmemory beam:100k-smoke
-    memrank submit word-overlap demo --on cloud --org atomicstrata
+    memrank run locomo --agent full-context
     memrank evals ls
     memrank runs ls
 
@@ -40,7 +38,6 @@ import typer
 
 from memrank import (
     errors,
-    settings,
 )
 from memrank.benchmarks import (
     get_benchmark,  # noqa: F401 - an established `runner.get_benchmark` import surface
@@ -56,7 +53,7 @@ from memrank.cli.config import config_app
 from memrank.cli.endpoints import endpoints_app
 from memrank.cli.evals import evals_app
 from memrank.cli.monitor import logs as _logs_cmd
-from memrank.cli.retired import refuse_retired_flags, register_retired
+from memrank.cli.retired import register_retired
 
 # Flat aliases for the hot path -- exactly `ps`, `watch`, `logs` and `kill`, and the SAME
 # functions their `runs` forms are, not reimplementations. `ps` used to read
@@ -139,15 +136,9 @@ from memrank.judging.shape import (  # noqa: F401 - `runner.BinaryJudgeShape` et
 )
 
 # The run lifecycle lives in `memrank.orchestration` now, re-imported BY ASSIGNMENT for
-# the same reason as the `memrank.evaluation` block above: `submit` calls these as bare
+# the same reason as the `memrank.evaluation` block above: `task-exec` calls these as bare
 # names (so a test that patches `runner.<name>` still intercepts the command's path), and
 # in-repo consumers still import them from here. Trim as consumers move to the real homes.
-from memrank.orchestration.cloud import (  # noqa: F401
-    _api_client,
-    _record_submission,
-    _report_refusals,
-    _submit_sweep,
-)
 from memrank.orchestration.observers import (
     _planned_progress,  # noqa: F401 - re-export; tests size plans through `runner._planned_progress`
 )
@@ -201,7 +192,6 @@ from memrank.orchestration.sweep import (  # noqa: F401
     _run_local_sweep,
     _safe_label,
     _spawn_child,
-    _submit_local_sweep,
     _summary_cell,
     _sweep_gates,
     _write_summary,
@@ -219,7 +209,7 @@ def _exit_with(exc: BaseException) -> SystemExit:
     ``MemrankError`` is a promise that ``str(exc)`` is a complete, actionable sentence, so it
     is printed verbatim. Anything else is a bug in memrank rather than a mistake by the user;
     name it as such so it gets reported, and point at the stack without printing it --
-    ``submit`` decrypts org credentials into a frame, and locals would carry them out.
+    ``task-exec`` decrypts org credentials into a frame, and locals would carry them out.
     """
     if isinstance(exc, Concluded):
         outcome.render(exc.outcome)
@@ -293,10 +283,10 @@ app.add_typer(evals_app, name="evals")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(skills_app, name="skills")
-# The engine-hosting path -- `submit`, its catalog of targets, and the commands that follow a
-# background run it started -- is hidden rather than removed (ATO-2343): a new user meets only
-# `memrank run --agent`, while the code, its tests and anyone's muscle memory keep working.
-# Each one is deprecated and says so on stderr when invoked.
+# The engine-hosting path's catalog of targets, and the commands that follow a hosted run, are
+# hidden rather than removed (ATO-2343): a new user meets only `memrank run --agent`. `submit`
+# itself is removed (ATO-2366); `task-exec` below only executes runs its caller already minted.
+# Each hidden command is deprecated and says so on stderr when invoked.
 app.add_typer(targets_app, name="targets", hidden=True,
               callback=lambda: deprecated_cli.notice("targets"))
 app.command("ps", hidden=True)(deprecated_cli.deprecated("ps", _ps_cmd))
@@ -339,174 +329,91 @@ def _root(
 # ---------------------------------------------------------------------------- #
 
 
-@app.command("submit", hidden=True)  # the engine-hosting path; see the registrations above
-def submit(
-    target: str | None = typer.Argument(None, help="Target ref, e.g. hindsight:matched (comma-separated to sweep)"),
-    benchmark_arg: str | None = typer.Argument(None, metavar="EVAL",
-                                           help="Eval ref, e.g. beam:100k-smoke (see `memrank evals ls`)"),
+#: The placements a task may execute under. ``cloud`` is absent on purpose: a task placing
+#: another task is how a hosted run could start without the API's run-shape ceilings (ATO-2366).
+_TASK_PLACEMENTS = ("none", "local")
+
+
+@app.command("task-exec", hidden=True)
+def task_exec(
+    target: str = typer.Argument(..., help="Target ref, e.g. hindsight:matched (comma-separated to sweep)"),
+    benchmark_arg: str = typer.Argument(..., metavar="EVAL",
+                                        help="Eval ref, e.g. beam:100k-smoke"),
     overrides: list[str] = typer.Argument(None, metavar="[KEY=VALUE]...", help="Component overrides, e.g. embedder=voyage/voyage-4-large"),
-    adapter: str | None = typer.Option(None, hidden=True, help="retired: see `--help`'s TARGET"),
-    benchmark: str | None = typer.Option(None, hidden=True, help="retired: see `--help`'s EVAL"),
-    tier: str | None = typer.Option(None, hidden=True),
-    slice: str | None = typer.Option(None, hidden=True),
-    ack_egress: bool = typer.Option(False, "--ack-egress", hidden=True,
-                                    help="retired: the benchmark gates egress, not this flag"),
-    max_judge_calls: int | None = typer.Option(None, "--max-judge-calls", hidden=True,
-                                               help="retired: the eval ref bounds the judge"),
     k: int = typer.Option(10, help="Top-k for retrieval"),
     repeats: int = typer.Option(3, help="Retrieval repeats for latency stability"),
     model: str = typer.Option("gpt-4o-mini", help="Model name for cost pricing"),
-    token_budget: int = typer.Option(
-        5000, help="Retrieval token budget: caps BOTH the $/query estimate and the "
-                   "context actually sent to the reader. The fairness control -- every "
-                   "target is held to the same budget, except on a benchmark whose own "
-                   "protocol declares the reader uncapped (beam)."),
+    token_budget: int = typer.Option(5000, help="Retrieval token budget"),
     seed: int = typer.Option(42, help="Random seed"),
-    workers: int = typer.Option(1, help="Ingest+retrieve this many UNITS concurrently "
-                                        "(each on its own adapter instance; recall is unaffected, "
-                                        "latency becomes contended). 1 = sequential."),
-    fail_fast: bool = typer.Option(
-        False, "--fail-fast", help="Stop the cell at the first unit that fails. The default "
-               "attempts every unit, records what happened to each in the artifact "
-               "(unit_outcomes, units_failed) and scores the composite over the units that ran."),
-    unit: list[str] = typer.Option([], "--unit", help="Run only unit(s) matching this "
-                                   "unit_id / substring, or a 0-based index (repeatable). "
-                                   "Applied after the eval ref's slice."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Emit every doc/query in the "
-                                 "progress bars and print a per-query HIT/MISS table per cell."),
-    all_adapters: bool = typer.Option(False, "--all-adapters", hidden=True,
-                                      help="retired: sweep with a comma-separated TARGET"),
+    workers: int = typer.Option(1, help="Ingest+retrieve this many units concurrently"),
+    fail_fast: bool = typer.Option(False, "--fail-fast", help="Stop the cell at the first failed unit"),
+    unit: list[str] = typer.Option([], "--unit", help="Run only matching unit(s) (repeatable)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Per-query progress output"),
     output_dir: Path = typer.Option(Path("results"), help="Where to write per-cell JSON"),
-    source: Path | None = typer.Option(
-        None, "--source", hidden=True, help="retired: declare binding.root in a named target"),
-    judge: bool | None = typer.Option(
-        None, "--judge/--no-judge",
-        help="LLM-judged sufficiency + answer correctness (sends data to Anthropic). Defaults to "
-             "what the eval needs: on for locomo/longmemeval/beam, whose only quality metric is "
-             "the judge's, off where the benchmark scores itself. `--no-judge` measures latency "
-             "and cost without paying for quality; `--judge` adds it where it is optional."),
+    judge: bool | None = typer.Option(None, "--judge/--no-judge", help="Judge the answers"),
     judge_samples: int = typer.Option(1, help="Majority-vote samples per judge grade"),
-    judge_workers: int = typer.Option(
-        DEFAULT_JUDGE_WORKERS, help="Grade this many queries concurrently. Separate from --workers because they bound "
-                "different resources: --workers is engine containers, this is ONE provider "
-                "account. Quality is unaffected -- the calls are independent and the reduce is "
-                "ordered, so metrics are identical at any value."),
+    judge_workers: int = typer.Option(DEFAULT_JUDGE_WORKERS, help="Concurrent judge calls"),
     no_judge_cache: bool = typer.Option(False, "--no-judge-cache", help="Disable the judge response cache"),
-    allow_empty_judge_coverage: bool = typer.Option(False, "--allow-empty-judge-coverage", help="Permit a judged run that scores 0 queries (no supported categories)"),
-    on: str | None = typer.Option(None, "--on", help="Where to run: none (an already-running "
-                           "engine) | local (a disposable image or named source target) | cloud "
-                           "(submit an ECS task). Every placement returns immediately; block "
-                           "with `memrank watch <id>`. Default: `defaults.on` (`memrank config ls`)"),
-    org: str | None = typer.Option(None, "--org", help="Spend this org's stored credentials "
-                                   "instead of the local wallet (requires `memrank auth login`)"),
-    run_id: list[str] = typer.Option(None, "--run-id", hidden=True, help="internal: execute mode -- reuse pre-created run id(s), one per target in order (set by the submitting parent and by the cloud task's rendered command)"),
+    allow_empty_judge_coverage: bool = typer.Option(False, "--allow-empty-judge-coverage", help="Permit a judged run that scores 0 queries"),
+    on: str = typer.Option("none", "--on", hidden=True,
+                           help="internal: none (engines beside the task) or local (the local "
+                                "background child provisions them); cloud is refused"),
+    org: str | None = typer.Option(None, "--org", hidden=True,
+                                   help="internal: the org whose credentials the parent loaded"),
+    run_id: list[str] = typer.Option(None, "--run-id", help="Pre-created run id(s), one per target in order"),
     target_digest: str | None = typer.Option(None, "--target-digest", hidden=True,
                                              help="internal: source target definition guard"),
 ) -> None:
-    """Submit a (target, benchmark) cell -- or a comma sweep -- and print one id per target."""
-    deprecated_cli.notice("submit")
-    refuse_retired_flags({"--adapter": adapter, "--benchmark": benchmark,
-                          "--all-adapters": all_adapters, "--tier": tier, "--slice": slice,
-                          "--ack-egress": ack_egress, "--max-judge-calls": max_judge_calls})
-    if source is not None:
+    """Internal: execute pre-created run(s) in this process. Not a user command.
+
+    The command a cloud task runs (rendered by the API from a browser's structured config) and
+    the one the local background child runs. It never places a run anywhere: it only executes
+    run ids its caller already minted, which is why ``--run-id`` is required and ``--on cloud``
+    is refused.
+    """
+    if not run_id:
+        raise typer.BadParameter("task-exec executes pre-created runs; pass --run-id per target. "
+                                 "To evaluate an agent, use `memrank run`.")
+    if on not in _TASK_PLACEMENTS:
         raise typer.BadParameter(
-            "--source is retired; put the checkout in a named target's binding.root, then "
-            "submit that target by name")
-    explicit_on = on
-    configured_on = settings.get("defaults.on")
-    on = explicit_on or configured_on or "none"
+            f"--on {on!r} is not a placement task-exec runs under; it accepts "
+            f"{' or '.join(_TASK_PLACEMENTS)}")
+    if org:
+        _load_org_credentials(org)
     component_overrides, run_overrides = _split_overrides(overrides or [])
     benchmark, factories = _run_targets(
         target=target, benchmark_arg=benchmark_arg, overrides=component_overrides,
-        # The cross-check asks a LIVE engine what it is configured with, so it can only be made
-        # where one is already answering. That is `--on none` alone: `--on local` provisions the
-        # engine after this point and `--on cloud` runs it in the task. In both of those the check
-        # still happens -- at the real construction, once the engine is up -- which is why narrowing
-        # it here loses nothing. Left unnarrowed, `--on local` failed in preflight with a connection
-        # refused against a container it was about to start.
+        # A live engine can only be asked what it is configured with where one already answers;
+        # under `local` the placement starts it later and the check happens at construction.
         verify_engine=on == "none")
     on, source_targets = _validate_source_target(
-        explicit_on=explicit_on, on=on, factories=factories, overrides=component_overrides)
+        explicit_on=on, on=on, factories=factories, overrides=component_overrides)
     if source_targets:
         target_digest = _source_digest_guard(source_targets, target_digest)
-    if not source_targets and explicit_on is None and configured_on is None:
-        raise typer.BadParameter("no placement selected; pass --on none, local, or cloud")
-    submitting = on == "cloud"
-    # `defaults.org` answers "on whose account does the PLATFORM run this" and nothing else. A
-    # local run's --org pulls the org's decrypted credentials onto this machine, so letting a
-    # configured default reach it would mean signing in silently changed what local runs spend.
-    if submitting and not org:
-        org = settings.get("defaults.org")
-    # A submission never needs decrypted values here; a local run explicitly using an org does.
-    if org and not submitting:
-        _load_org_credentials(org)
     _validate_positive(k=k, repeats=repeats, token_budget=token_budget,
                        judge_samples=judge_samples, workers=workers)
-    # Parsed BEFORE the submission fork, not only on the local path. The eval ref IS the
-    # evaluation's identity: `beam:100k-smoke` is a different evaluation from `beam:1m`, not the
-    # same one with a knob turned. Deriving here means `tier`/`slice` everywhere below come from
-    # the ref rather than beside it -- and it is what the CLOUD payload needs: the server mints
-    # run ids and rows from the positional facts (benchmark, tier, slice), and shipping the raw
-    # ref as `benchmark` put a `:` into a string that becomes a shell token and an S3 key
-    # (refused, correctly, as an unsafe run id on 2026-08-13). `benchmark_arg` becomes the
-    # canonical spelling so the rendered argv records what actually runs.
     try:
         eval_name, eval_kwargs, eval_ref = parse_eval_ref(benchmark)
     except RefError as exc:
         raise typer.BadParameter(str(exc)) from exc
     bench_kwargs: dict[str, Any] = {**eval_kwargs, "k": k}
     tier, slice = eval_kwargs.get("tier"), eval_kwargs.get("slice")
-    benchmark_arg = eval_ref
-    # An omitted flag is not a decision to skip judging: on locomo, longmemeval and beam the judge
-    # IS the metric, and a run without one measures latency and nothing else. Resolved here rather
-    # than defaulted at the flag, because the answer depends on which eval was named -- and resolved
-    # BEFORE `_validate_reader`, which refuses a reader override on an unjudged run and would
-    # otherwise refuse one on a run that is about to judge.
+    # The caller states --judge/--no-judge explicitly; deriving it here is only a backstop.
     judge = judge_required(eval_name) if judge is None else judge
     _validate_reader(run_overrides.get("reader"), judged=judge)
     judge_cfg = _judge_cfg_or_refuse(
         enabled=judge, samples=judge_samples, no_cache=no_judge_cache,
         allow_empty_coverage=allow_empty_judge_coverage,
         reader=run_overrides.get("reader"))
-    # The coverage refusal and the cost estimate happen for EVERY placement, here, before anything
-    # is minted or submitted. They are sums over the benchmark's own queries -- equally true on this
-    # laptop and inside a Fargate task -- and asking them only in the task is what killed four runs
-    # on 2026-08-13, each after an image pull and a 274 MB dataset download.
-    # `targets` is placement-dependent and cannot be defaulted: a local sweep runs every engine
-    # under ONE shared counter, while each submitted target is its own task with its own. It only
-    # changes what the printed estimate says now, but it says it truthfully.
     gated_units, judge_cfg = question_gates(
         benchmark=eval_name, bench_kwargs=bench_kwargs, slice_=slice, judge_cfg=judge_cfg,
-        unit=unit, targets=1 if submitting else len(factories))
-    # `eval_name`, not the ref as it was typed: the variant is already in `tier`/`slice` below, and
-    # a cell's identity must not depend on which of `beam` and `beam:100k` the caller wrote.
+        unit=unit, targets=len(factories))
     experiments_by_ref = _cli_experiments(
         factories, eval_name, component_overrides,
         {**locals(), "reader": run_overrides.get("reader"), "slice_": slice})
-    plan_hash = None
-    if submitting:
-        # Everything below is LOCAL execution work a submission must not do -- prompting for
-        # credentials the task gets from SSM, provisioning engines, building the judge.
-        params = dict(locals())
-        _submit_sweep([label for label, _ in factories], params, org=org,
-                      benchmark=eval_name, slice_=slice, tier=tier)
-        return
-    # Before a run exists, not inside one. A machine that cannot run here used to be discovered by
-    # the placement AFTER minting, so a missing Docker became a run record marked failed with
-    # `internal error: FileNotFoundError: 'docker'` -- memrank blaming itself for the machine. The
-    # rows come from the placement that needs them, so this cannot drift from what actually stops
-    # the run.
-    # Every source target in the sweep, not just the first: each launches its own directory, so
-    # each has its own markers and launcher to be missing. Naming them one run at a time would be
-    # the round-trip a single honest refusal removes.
     for checked in source_targets or [None]:
         _require_placement_ready(on, target=checked)
-    # In the PARENT, before anything spawns: the background child has no terminal, so a prompt
-    # there would hang forever with nobody to answer it. The secrets land in this process's
-    # environment, which the child inherits.
     _ensure_run_credentials(targets=[label for label, _ in factories], judged=judge,
-                            # Only --on local has memrank starting the engine and therefore
-                            # needing its keys; otherwise the engine already has them.
                             provisioning=(on == "local"))
     output_dir.mkdir(parents=True, exist_ok=True)
     opts = _ExecOpts(benchmark=eval_name, eval_ref=eval_ref,
@@ -516,10 +423,7 @@ def submit(
                      judged=judge, judge_workers=judge_workers, fail_fast=fail_fast,
                      judge_cfg=judge_cfg,
                      units=gated_units, experiments=experiments_by_ref)
-    if run_id:  # execute mode: the spawned child, or the cloud container -- the blocking path
-        _run_local_sweep(factories, opts, run_ids=list(run_id))
-        return
-    _submit_local_sweep(factories, opts, params=dict(locals()))
+    _run_local_sweep(factories, opts, run_ids=list(run_id))
 
 
 @app.command("version")

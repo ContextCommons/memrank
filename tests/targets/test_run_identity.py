@@ -30,7 +30,7 @@ def test_identity_differs_when_the_config_hash_differs():
 
 def test_run_prints_the_identity_and_the_benchmark(tmp_path):
     """Both halves matter: the identity says WHICH config, the benchmark says on what."""
-    result = _run(tmp_path, "submit", "word-overlap", "demo")
+    result = _run(tmp_path, "task-exec", "word-overlap", "demo")
     assert result.exit_code == 0, result.output
     assert "[word-overlap-" in result.output          # stem + hash, not the bare label
     assert "× demo]" in result.output             # benchmark retained alongside it
@@ -38,7 +38,7 @@ def test_run_prints_the_identity_and_the_benchmark(tmp_path):
 
 def test_cell_records_the_target_ref(tmp_path):
     """The `adapter` field is the adapter NAME; without this the variant is unrecoverable."""
-    _run(tmp_path, "submit", "word-overlap", "demo")
+    _run(tmp_path, "task-exec", "word-overlap", "demo")
     cell = json.loads((tmp_path / "word-overlap__demo.json").read_text(encoding="utf-8"))
     assert cell["target"] == "word-overlap"
     assert cell["receipt"]["config_hash_version"] >= 1
@@ -58,7 +58,7 @@ def test_reader_override_reaches_the_judge_config():
 
 def test_reader_without_judge_is_rejected_not_ignored(tmp_path):
     """It previously ran happily and did nothing -- exit 0, identity unchanged, no warning."""
-    result = _run(tmp_path, "submit", "word-overlap", "demo",
+    result = _run(tmp_path, "task-exec", "word-overlap", "demo",
                   "reader=claude-haiku-4-5-20251001")
     assert result.exit_code != 0
     assert "no effect without" in result.output      # short: Rich wraps the full sentence
@@ -66,7 +66,7 @@ def test_reader_without_judge_is_rejected_not_ignored(tmp_path):
 
 def test_non_anthropic_reader_is_rejected_at_parse_time(tmp_path):
     """It previously parsed, started the run, then died at the first API call."""
-    result = _run(tmp_path, "submit", "word-overlap", "demo",
+    result = _run(tmp_path, "task-exec", "word-overlap", "demo",
                   "--judge", "reader=gpt-4o-mini")
     assert result.exit_code != 0
     assert "not an Anthropic model" in result.output

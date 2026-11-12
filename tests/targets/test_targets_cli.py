@@ -72,15 +72,6 @@ def test_show_json_emits_one_complete_named_source_target(tmp_path, monkeypatch)
     assert "engine" not in payload and "workspace" not in payload
 
 
-def test_retired_submit_source_points_to_named_target(tmp_path):
-    result = runner.invoke(
-        app, ["submit", "myengine", "demo", "--source", str(tmp_path), "--on", "local"])
-
-    assert result.exit_code != 0
-    assert "--source is retired" in result.output
-    assert "binding.root" in result.output
-
-
 def test_show_applies_overrides():
     withheld.require("mem0")
     result = runner.invoke(app, ["targets", "show", "mem0", "--json",

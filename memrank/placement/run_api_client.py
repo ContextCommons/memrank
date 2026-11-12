@@ -34,12 +34,15 @@ from memrank.provenance.install import with_upgrade_instruction
 class RunApiError(MemrankError):
     """The API refused or failed a run operation. ``code`` is machine-dispatchable --
     the CLI's auto-build loop triggers on ``image_missing`` and nothing else. ``status`` is the
-    API's HTTP status, when it answered with one."""
+    API's HTTP status, when it answered with one. ``detail`` is the rest of the API's refusal --
+    ``through_seq`` on a ``seq_gap``, ``retry_after_s`` on a ``429`` -- empty when it gave none."""
 
-    def __init__(self, message: str, *, code: str = "", status: int | None = None) -> None:
+    def __init__(self, message: str, *, code: str = "", status: int | None = None,
+                 detail: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.status = status
+        self.detail = detail or {}
 
 
 def _refusal(response) -> RunApiError:
@@ -55,13 +58,14 @@ def _refusal(response) -> RunApiError:
     if response.status_code == 403:
         return RunApiError("you are not a member of this org", code="forbidden")
     detail = response.json().get("detail", {}) if _is_json(response) else {}
-    code = detail.get("code", "") if isinstance(detail, dict) else ""
-    message = detail.get("message", response.text) if isinstance(detail, dict) else response.text
+    detail = detail if isinstance(detail, dict) else {}
+    code = detail.get("code", "")
+    message = detail.get("message", response.text)
     if response.status_code >= 500:
         return RunApiError(_server_failure(response, str(message)), code=code,
-                           status=response.status_code)
+                           status=response.status_code, detail=detail)
     return RunApiError(f"{with_upgrade_instruction(str(message))} ({response.status_code})",
-                       code=code, status=response.status_code)
+                       code=code, status=response.status_code, detail=detail)
 
 
 def _server_failure(response, message: str) -> str:
@@ -115,6 +119,26 @@ def add_judging(http, org: str, run_id: str, judging: dict[str, Any]) -> dict[st
     the same judge, endpoint and prompt version is refused (``judging_exists``), never replaced.
     """
     response = http.post(f"/orgs/{org}/runs/{run_id}/judgings", json=judging)
+    if response.status_code != 200:
+        raise _refusal(response)
+    return response.json()
+
+
+def post_events(http, url: str, body: bytes) -> dict[str, Any]:
+    """Send one contiguous range of a run's live events to ``url``, the registration's ``live``.
+
+    ``body`` is the :class:`~memrank.service.live_events.Upload` already encoded, so its size is
+    the one the uploader measured against the API's byte cap. Answers the API's ``UploadAck``.
+    """
+    response = http.post(url, content=body, headers={"content-type": "application/json"})
+    if response.status_code != 200:
+        raise _refusal(response)
+    return response.json()
+
+
+def get_answers(http, org: str, run_id: str) -> dict[str, Any]:
+    """An agent run's answers from the API's rows, with its provisional score while unsealed."""
+    response = http.get(f"/orgs/{org}/runs/{run_id}/answers")
     if response.status_code != 200:
         raise _refusal(response)
     return response.json()

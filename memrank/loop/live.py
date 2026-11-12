@@ -77,12 +77,16 @@ class LiveRun:
     echo: Callable[[str], None]
     judged_run: bool
     url: str | None = None
+    #: The registration answer's ``live``: where the run's events go (:mod:`memrank.loop.uploader`).
+    events: dict[str, Any] | None = None
     _channel: Channel | None = None
     _progress: RunProgress = field(init=False)
     _seen: RunStatus | None = None
     _last_sent: float = 0.0
     _sequence: int = 0
     _failing: bool = False
+    #: Every step is done: the counts the service reports no longer move.
+    _steps_done: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def __post_init__(self) -> None:
@@ -95,6 +99,7 @@ class LiveRun:
             answer = register(self.hosted, self.run_id, self.agent, self.evaluation,
                               state="running", progress=self._progress.as_dict())
             self.url = answer.get("url")
+            self.events = answer.get("live")
             self._channel = self._channel_from(answer.get("progress"))
             self._last_sent = self.clock()
         return self.url
@@ -111,18 +116,20 @@ class LiveRun:
         self._maybe_send(force=False)
 
     def judging(self, answers: int) -> None:
-        """Judging begins over ``answers``; send a sample now, since the stage changes."""
+        """Every step is done and the last of ``answers`` are being graded; send a sample now,
+        since the stage changes. Verdicts have been landing since the first answer."""
         with self._lock:
             status = self.status()  # every step is done: the last sample may predate the last
             self._tally(status)
             self._plan(status, judgements=answers)
             self._progress.enter_stage("judge")
+            self._steps_done = True
         self._maybe_send(force=True)
 
-    def one_judged(self) -> None:
-        """One verdict landed (called from the judge's workers)."""
+    def one_judged(self, count: int = 1) -> None:
+        """``count`` verdicts landed (called from the judge's workers, while the steps run)."""
         with self._lock:
-            self._progress.record("judge")
+            self._progress.record("judge", items=count)
         self._maybe_send(force=False)
 
     def stopped(self, reason: str) -> None:
@@ -145,7 +152,7 @@ class LiveRun:
                                    self.clock() - self._last_sent < channel.interval_s):
                 return
             self._last_sent = self.clock()
-            if self._progress.stage != "judge":
+            if not self._steps_done:
                 self._tally(self.status())
             self._sequence += 1
             body = {"progress": self._progress.as_dict(), "sequence": self._sequence}

@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "case_id": "m1",
+      "status": "complete",
+      "error": null,
+      "restarts": 0,
+      "questions": [
+        {
+          "case_id": "m1",
+          "question_id": "m1_q0",
+          "question": "Reply with the code word.",
+          "reference": [
+            "swordfish"
+          ],
+          "category": "recall",
+          "grading": {
+            "grader": "exact",
+            "gold_answers": [
+              "swordfish"
+            ]
+          },
+          "status": "judged",
+          "answer": "swordfish",
+          "error": null,
+          "elapsed_ms": 12.0,
+          "retrieval_ms": null,
+          "score": 1.0,
+          "passed": true,
+          "rationale": "exact match",
+          "probability": null,
+          "decision": null
+        },
+        {
+          "case_id": "m1",
+          "question_id": "m1_q1",
+          "question": "Reply with the second code word.",
+          "reference": [
+            "marlin"
+          ],
+          "category": "recall",
+          "grading": {
+            "grader": "exact",
+            "gold_answers": [
+              "marlin"
+            ]
+          },
+          "status": "judged",
+          "answer": "tuna",
+          "error": null,
+          "elapsed_ms": 11.0,
+          "retrieval_ms": null,
+          "score": 0.0,
+          "passed": false,
+          "rationale": "no exact match",
+          "probability": null,
+          "decision": null
+        }
+      ]
+    }
+  ]
+}

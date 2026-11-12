@@ -2,19 +2,27 @@
 
 The org is the runs API as the runner sees it: ``PUT /orgs/acme/runs/{id}`` (register, stop,
 upload), ``PUT /orgs/acme/runs/{id}/answers`` (every question, before the summary record that
-points at them) and ``POST /runs/{id}/progress`` (the run-token channel a running run is handed).
+points at them), ``POST /runs/{id}/progress`` (the run-token channel a running run is handed) and
+``POST /orgs/acme/runs/{id}/events`` (the live results, gated on the next contiguous range as the
+API gates them).
 """
 
 from __future__ import annotations
 
 import json
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 
 import httpx
 
+from memrank.definitions.base import Verdict
 from memrank.judging.providers import resolve
+from memrank.loop import grading as loop_grading
+from memrank.loop import judge as loop_judge
 from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.upload import Account, Hosted
-from memrank.service.protocol import RunResult
+from memrank.service.protocol import QuestionOutcome, RunResult
 from tests.service.conftest import client, engine, judge  # noqa: F401 - pytest fixtures
 
 PAGE = "https://memrank.test/acme/runs/{run_id}"
@@ -34,11 +42,23 @@ class OrgApi:
         #: Each run's uploaded answers, by run id.
         self.answers: dict[str, dict] = {}
         self.progress_down = False
+        #: Each run's live events the org holds, in order, by run id.
+        self.events: dict[str, list[dict]] = {}
+        #: Every live upload's ``(from_seq, to_seq)``, in the order they arrived.
+        self.uploads_live: list[tuple[int, int]] = []
+        #: ``False`` plays an API from before live results: its registration offers no ``live``.
+        self.live_offered = True
+        #: How many live uploads to answer ``503`` before taking them again.
+        self.events_down = 0
+        self._lock = threading.Lock()
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         body = json.loads(request.content)
-        run_id = path.split("/")[-2 if path.endswith(("/progress", "/answers")) else -1]
+        run_id = path.split("/")[-2 if path.endswith(("/progress", "/answers", "/events"))
+                                else -1]
+        if path.endswith("/events"):
+            return self._events(run_id, body)
         if path.endswith("/answers"):
             self.answers[run_id] = body
             return httpx.Response(200, json={"answers": "answers.json"})
@@ -51,8 +71,25 @@ class OrgApi:
         self.syncs.append(body)
         running = body["state"] == "running"
         channel = {"url": CHANNEL.format(run_id=run_id), "token": "mrr_token"}
+        live = {"url": f"http://api/orgs/acme/runs/{run_id}/events",
+                "through_seq": len(self.events.get(run_id, []))}
         return httpx.Response(200, json={"url": PAGE.format(run_id=run_id),
-                                         "progress": channel if running else None})
+                                         "progress": channel if running else None,
+                                         "live": live if self.live_offered else None})
+
+    def _events(self, run_id: str, body: dict) -> httpx.Response:
+        if self.events_down:
+            self.events_down -= 1
+            return httpx.Response(503, text="down")
+        with self._lock:
+            held = self.events.setdefault(run_id, [])
+            self.uploads_live.append((body["from_seq"], body["to_seq"]))
+            if body["to_seq"] > len(held):
+                if body["from_seq"] != len(held) + 1:
+                    return httpx.Response(409, json={"detail": {
+                        "code": "seq_gap", "message": "gap", "through_seq": len(held)}})
+                held.extend(body["events"])
+            return httpx.Response(200, json={"through_seq": len(held), "state": "running"})
 
     def hosted(self, judge_key: str | None = "org-key", spec: str = DEFAULT_JUDGE) -> Hosted:
         """The org, holding ``judge_key`` for ``spec`` (a built-in judge) as `connect` would."""
@@ -82,3 +119,36 @@ class OrgApi:
 def run_id_of(echoed: list[str]) -> str:
     """The id the run's opening line names: ``memrank: Run <id> . <evaluation> ...``."""
     return next(line.split()[2] for line in echoed if line.startswith("memrank: Run "))
+
+
+def record_keys(monkeypatch, keys: list[str | None], *, cache: bool = False) -> None:
+    """Grade with the real graders, noting the key each run's grading is built with; the
+    judge cache is off unless ``cache``."""
+    def build(definition, uses_model, api_key, cfg=None):
+        keys.append(api_key)
+        cfg = replace(cfg, cache=False) if cfg is not None and not cache else cfg
+        return loop_judge.run_grading(definition, uses_model, api_key, cfg)
+
+    monkeypatch.setattr(loop_grading, "run_grading", build)
+
+
+def passed(question: QuestionOutcome) -> Verdict:
+    return {"status": "judged", "score": 1.0, "passed": True, "rationale": "stub"}
+
+
+@dataclass
+class StubGrading:
+    """A grading with no model that hands every answer to ``grade``: for the loop tests whose
+    subject is not the verdicts."""
+
+    grade: Callable[[QuestionOutcome], Verdict] = passed
+    model: None = None
+    identity: None = None
+    samples: int = 0
+    prompt_version: None = None
+
+
+def stub_grading(monkeypatch, grade: Callable[[QuestionOutcome], Verdict] = passed) -> None:
+    """Every run grades with :class:`StubGrading` over ``grade``."""
+    monkeypatch.setattr(loop_grading, "run_grading",
+                        lambda definition, uses_model, api_key, cfg=None: StubGrading(grade))

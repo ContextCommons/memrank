@@ -10,13 +10,10 @@ import pytest
 
 from memrank.connect.base import AgentError
 from memrank.connect.spec import AgentSpec
-from memrank.judging.judge import JudgeConfig
 from memrank.judging.providers import ADAPTERS
-from memrank.loop import judge as loop_judge
-from memrank.loop import run as loop_run
 from memrank.loop.run import RESULT_BEFORE_RETRY, RunOptions, run_agent
-from memrank.service.protocol import AgentRef, RunResult, Step
-from tests.loop.conftest import OrgApi
+from memrank.service.protocol import AgentRef, Step
+from tests.loop.conftest import OrgApi, record_keys
 from tests.loop.test_run import full_context, quiet
 from tests.service.conftest import FakeJudge
 
@@ -49,10 +46,7 @@ def paid(monkeypatch, tmp_path) -> FakeJudge:
     monkeypatch.setenv("MEMRANK_CACHE_DIR", str(tmp_path / "cache"))
     fake = FakeJudge()
 
-    def judge(result: RunResult, api_key, cfg: JudgeConfig, judged=lambda: None) -> RunResult:
-        return loop_judge.judge(result, api_key, cfg, judged=judged)
-
-    monkeypatch.setattr(loop_run, "judge", judge)
+    record_keys(monkeypatch, [], cache=True)
     monkeypatch.setitem(ADAPTERS, "anthropic", lambda target, api_key, *, max_tokens: (
         lambda model, system, user, sampling: fake(model, system, user)))
     return fake

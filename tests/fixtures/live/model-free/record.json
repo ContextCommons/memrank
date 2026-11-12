@@ -1,0 +1,85 @@
+{
+  "kind": "agent",
+  "answers": "answers.json",
+  "result": {
+    "run_id": "run-live-model-free",
+    "evaluation": "code-words@1",
+    "agent": {
+      "name": "fixture-agent",
+      "version": null,
+      "spec_path": null,
+      "spec_sha256": null
+    },
+    "identity": {
+      "evaluation": "code-words@1",
+      "dataset_version": "fixture@v1",
+      "task_version": 2,
+      "seed": 0,
+      "cases_requested": null,
+      "questions_per_case": null,
+      "case_ids": [
+        "m1"
+      ],
+      "agent": {
+        "name": "fixture-agent",
+        "version": null,
+        "spec_path": null,
+        "spec_sha256": null
+      },
+      "judge_requested": true,
+      "judge": null,
+      "judge_provider": null,
+      "judge_model": null,
+      "judge_endpoint": null,
+      "judge_settings": null,
+      "judge_source": null,
+      "judge_samples": 0,
+      "judge_prompt_version": null,
+      "memrank_version": "0.5.1",
+      "evaluation_version": null,
+      "evaluation_fingerprint": null,
+      "evaluation_source": null
+    },
+    "status": "complete",
+    "judged": true,
+    "notice": null,
+    "score": {
+      "mean": 0.5,
+      "ci95": [
+        0.5,
+        0.5
+      ],
+      "n": 2
+    },
+    "per_category": {
+      "recall": {
+        "mean": 0.5,
+        "ci95": [
+          0.5,
+          0.5
+        ],
+        "n": 2
+      }
+    },
+    "failure_rate": 0.0,
+    "questions": 2,
+    "failed": 0,
+    "unjudged": 0,
+    "latency_ms": {
+      "feed_p50": 50.0,
+      "feed_p95": 80.0,
+      "ask_p50": 110.0,
+      "ask_p95": 140.0
+    },
+    "retrieval": null,
+    "cases": [
+      {
+        "case_id": "m1",
+        "status": "complete",
+        "error": null,
+        "restarts": 0,
+        "questions": []
+      }
+    ]
+  }
+}

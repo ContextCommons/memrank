@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""`memrank submit mem0 locomo --on none` with no mem0 running is the user's fix, not a memrank bug.
+"""Running mem0 on locomo with no mem0 running is the user's fix, not a memrank bug.
 
 It printed "internal error: ConnectError: [Errno 61] Connection refused / this is a bug in
 memrank": the manifest cross-check asked mem0 for its configuration before anything else, and the
@@ -54,8 +54,8 @@ def test_a_refused_engine_is_reported_as_the_users_fix(
     monkeypatch.setenv(url_env, "http://operator:hunter2@localhost:8888")
     monkeypatch.delenv("MEMRANK_DEBUG", raising=False)
     monkeypatch.setattr(adapter_errors.httpx, "HTTPTransport", _RefusingSocket)
-    monkeypatch.setattr("sys.argv", ["memrank", "submit", target, evaluation, "--on", "none",
-                                     "--output-dir", str(tmp_path / "out")])
+    monkeypatch.setattr("sys.argv", ["memrank", "task-exec", target, evaluation, "--on", "none",
+                                     "--output-dir", str(tmp_path / "out"), "--run-id", "u1"])
 
     with pytest.raises(SystemExit) as exited:
         runner_module.main()
@@ -64,6 +64,6 @@ def test_a_refused_engine_is_reported_as_the_users_fix(
 
     assert exited.value.code == 1
     assert f"engine {target!r} is not answering at {tried}" in output
-    assert url_env in output and "--on local" in output
+    assert url_env in output and "start the engine" in output
     assert "bug in memrank" not in output and "internal error" not in output
     assert "hunter2" not in output and "operator" not in output

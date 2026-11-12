@@ -94,5 +94,5 @@ def unportable_message(local: dict[str, Path]) -> str:
     # undoing a decision rather than describing a limit.
     return (f"{subject} defined only on this machine: {named}. A cloud task runs the platform "
             f"harness, which carries only the targets shipped with memrank, so it cannot resolve "
-            f"{them}. Run {them} with --on local. A target belongs in the package only if it is "
+            f"{them}. Run {them} with local placement. A target belongs in the package only if it is "
             f"memrank's to ship; one that is yours stays yours, and stays local.")

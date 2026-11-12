@@ -26,7 +26,6 @@ import pytest
 
 from memrank import runner
 from memrank.evaluation import aggregate, cell, judge_stage, observer, receipt
-from memrank.orchestration import cloud as orchestration_cloud
 from memrank.orchestration import observers as orchestration_observers
 from memrank.orchestration import placement_gate as orchestration_placement
 from memrank.orchestration import resolve as orchestration_resolve
@@ -60,8 +59,6 @@ MOVED = {
     orchestration_placement: ["PLACEMENTS", "_environment_patch",
                               "_require_placement_ready", "_source_digest_guard",
                               "_validate_source_target", "placement_for"],
-    orchestration_cloud: ["_api_client", "_record_submission", "_report_refusals",
-                          "_submit_sweep"],
     orchestration_sweep: ["SweepKilled", "_ExecOpts", "_LocalRun", "_child_argv",
                           "_composite_display", "_composite_rankable",
                           "_discard_checkpoint", "_echo_cell_outcome",
@@ -70,7 +67,7 @@ MOVED = {
                           "_mint_local_runs", "_mirror_to_mlflow", "_preflight_engines",
                           "_preload_tokenizer_with_notice", "_record_local_run",
                           "_run_and_persist", "_run_local_sweep", "_safe_label",
-                          "_spawn_child", "_submit_local_sweep", "_summary_cell",
+                          "_spawn_child", "_summary_cell",
                           "_sweep_gates", "_write_summary", "question_gates",
                           "run_identity"],
 }

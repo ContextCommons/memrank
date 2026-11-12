@@ -1,4 +1,4 @@
-"""`memrank submit <target> <benchmark>` -- the manifest-driven run form."""
+"""`memrank task-exec <target> <benchmark>` -- the manifest-driven run form a task executes."""
 from __future__ import annotations
 
 import json
@@ -29,37 +29,18 @@ def _run(tmp_path, *args, targets=1):
 
 
 def test_positional_form_runs_and_writes_a_cell(tmp_path):
-    result = _run(tmp_path, "submit", "word-overlap", "demo")
+    result = _run(tmp_path, "task-exec", "word-overlap", "demo")
     assert result.exit_code == 0, result.output
     assert (tmp_path / "word-overlap__demo.json").exists()
 
 
-def test_the_legacy_flag_form_is_retired_and_points_at_the_positional_one(tmp_path):
-    """It named the subject before `targets` existed. Two ways to say one thing is what the
-    model's flag ontology exists to prevent -- and the env-configured path it used described a
-    run by whatever variables the process held rather than by a manifest."""
-    result = _run(tmp_path, "submit", "--adapter", "word-overlap", "--benchmark", "demo")
-    assert result.exit_code != 0
-    assert "`--adapter` is retired" in result.output
-    assert "<target> <eval>" in result.output
-    assert not (tmp_path / "word-overlap__demo.json").exists(), "and nothing ran"
-
-
-def test_a_retired_flag_is_refused_even_beside_a_valid_positional_form(tmp_path):
-    """The refusal is about the flag, not about the pair -- so it cannot be smuggled in
-    alongside the form that replaced it."""
-    result = _run(tmp_path, "submit", "word-overlap", "demo", "--adapter", "word-overlap")
-    assert result.exit_code != 0
-    assert "retired" in result.output
-
-
 def test_positional_target_without_benchmark_is_rejected(tmp_path):
-    assert _run(tmp_path, "submit", "word-overlap").exit_code != 0
+    assert _run(tmp_path, "task-exec", "word-overlap").exit_code != 0
 
 
 def test_unknown_target_ref_fails_rather_than_skipping(tmp_path):
     """The legacy form skips unknown adapters; a bad ref must be loud."""
-    assert _run(tmp_path, "submit", "nope", "demo").exit_code != 0
+    assert _run(tmp_path, "task-exec", "nope", "demo").exit_code != 0
 
 
 def test_ref_with_preset_yields_a_filesystem_safe_cell_name(tmp_path):
@@ -70,7 +51,7 @@ def test_ref_with_preset_yields_a_filesystem_safe_cell_name(tmp_path):
 
 
 def test_comma_sweeps_targets(tmp_path):
-    result = _run(tmp_path, "submit", "word-overlap,word-overlap", "demo",
+    result = _run(tmp_path, "task-exec", "word-overlap,word-overlap", "demo",
                   targets=2)
     assert result.exit_code == 0, result.output
 
@@ -92,13 +73,13 @@ def test_conflicting_environment_aborts_the_run(tmp_path, monkeypatch):
     """A server configured with bge must not be evaluated under a target claiming otherwise."""
     monkeypatch.setenv("MEM0_EMBEDDER_MODEL", "BAAI/bge-small-en-v1.5")
     monkeypatch.setenv("MEM0_EMBEDDING_DIMS", "384")
-    result = _run(tmp_path, "submit", "mem0", "demo")
+    result = _run(tmp_path, "task-exec", "mem0", "demo")
     assert result.exit_code != 0
     assert not (tmp_path / "mem0__demo.json").exists()
 
 
 def test_cell_json_records_manifest_components(tmp_path):
-    _run(tmp_path, "submit", "word-overlap", "demo")
+    _run(tmp_path, "task-exec", "word-overlap", "demo")
     cell = json.loads((tmp_path / "word-overlap__demo.json").read_text(encoding="utf-8"))
     components = cell["receipt"]["config"]["components"]
     assert components["engine"]["transport"] == "in-process"

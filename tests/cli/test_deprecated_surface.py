@@ -49,7 +49,7 @@ def test_importing_memrank_and_the_cli_does_not_warn():
     assert deprecation.REPLACEMENT not in done.stderr
 
 
-@pytest.mark.parametrize("args", [["ps", "--help"], ["submit", "--help"]])
+@pytest.mark.parametrize("args", [["ps", "--help"], ["task-exec", "--help"]])
 def test_hidden_commands_still_show_their_help_without_the_notice(args):
     assert runner.invoke(app, args).exit_code == 0
 

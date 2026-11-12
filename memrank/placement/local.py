@@ -229,12 +229,12 @@ class LocalPlacement:
         except (OSError, ValueError) as exc:
             return [Requirement(name="docker", ok=False, detail=str(exc),
                                 fix="install Docker (https://docs.docker.com/get-docker/), "
-                                    "or run elsewhere with `--on cloud`")]
+                                    "then re-run")]
         if result.returncode != 0 or not result.stdout.strip():
             detail = (result.stderr or result.stdout).strip().splitlines()
             return [Requirement(name="docker", ok=False,
                                 detail=detail[0] if detail else "the daemon did not answer",
-                                fix="start Docker and re-run, or run elsewhere with `--on cloud`")]
+                                fix="start Docker and re-run")]
         return [Requirement(name="docker", ok=True, detail=result.stdout.strip())]
 
     def provision(self, target: Manifest) -> Endpoint:

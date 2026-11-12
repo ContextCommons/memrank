@@ -33,14 +33,14 @@ import re
 import click
 import typer.main
 
-from memrank.cli.retired import RETIRED_FLAGS
+from memrank.cli.retired import REMOVED, RETIRED_FLAGS
 from memrank.runner import app
 from tests.repo.prose import Sentence, published_sentences, sentences_of
 
 CLI = typer.main.get_command(app)
 SPAN = re.compile(r"`([^`]+)`")
 VERB = re.compile(r"(?:^|\s)memrank\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
-NAMED_AS_RETIRED = re.compile(r"retired|deprecated|no longer|refus|exits 2", re.I)
+NAMED_AS_RETIRED = re.compile(r"retired|deprecated|no longer|removed|refus|exits 2", re.I)
 
 
 def _resolves(verb: str, sub: str | None) -> bool:
@@ -74,6 +74,8 @@ def offences(sentence: Sentence) -> list[str]:
     found = []
     for span in SPAN.findall(sentence.text):
         for verb, sub in VERB.findall(span):
+            if verb in REMOVED and NAMED_AS_RETIRED.search(sentence.text):
+                continue
             if not _resolves(verb, sub or None):
                 found.append(f"{sentence.where} names `{span}`, which the CLI does not have")
         for flag, instead in RETIRED_FLAGS.items():
@@ -102,5 +104,7 @@ def test_the_scan_catches_the_commands_that_shipped_wrong():
     assert caught("`memrank list-adapters` does not offer it.") == 1
     assert caught("A target only supports `--adapter myengine`.") == 1
     assert caught("`--adapter` is retired; use a target.") == 0
-    assert caught("`memrank runs ls` lists them, and `memrank submit tfidf squad` runs.") == 0
+    assert caught("`memrank runs ls` lists them, and `memrank evals ls` names them.") == 0
+    assert caught("`memrank submit tfidf demo` runs it.") == 1
+    assert caught("`memrank submit` has been removed; use `memrank run`.") == 0
     assert caught("`memrank runs lss` lists them.") == 1

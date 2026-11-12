@@ -155,10 +155,17 @@ class StepResult(BaseModel):
 
 
 class Ack(BaseModel):
-    """The service accepted a step result (or had already accepted this exact one)."""
+    """The service accepted a step result (or had already accepted this exact one).
+
+    ``outcomes`` are the questions that step made final, as the service computed them: the
+    asked question for an answer, every unasked question of its case for a failed reset or
+    feed. Empty for a retry, whose outcomes the first acceptance carried. A question's
+    reference is released here only because its answer is final (decision R5).
+    """
 
     step_id: str
     duplicate: bool = False
+    outcomes: list[FinalQuestion] = Field(default_factory=list)
 
 
 class Reopened(BaseModel):
@@ -189,6 +196,12 @@ class RunStatus(BaseModel):
     questions_done: int
     asked_ms: float
     done: bool
+    #: What finds the run's evaluation again (a shipped ref, or a file's absolute path), so a
+    #: runner can grade with its graders without being told its original arguments.
+    evaluation_source: str
+    #: Whether any question in the run's plan is graded by the judge model -- so whether the
+    #: run's judging names a judge, which is fixed before the first answer is graded.
+    uses_model: bool
 
 
 class Interval(BaseModel):
@@ -227,6 +240,13 @@ class QuestionOutcome(BaseModel):
     #: set's version, every answer with its probabilities, the rule and threshold, and the model
     #: asked for beside the one that answered. None for a text judge.
     decision: dict[str, Any] | None = None
+
+
+class FinalQuestion(BaseModel):
+    """A question whose answer is final, at its ``position`` in the run's plan order."""
+
+    position: int = Field(ge=0)
+    outcome: QuestionOutcome
 
 
 class CaseOutcome(BaseModel):

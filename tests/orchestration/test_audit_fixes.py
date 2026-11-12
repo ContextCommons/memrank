@@ -492,8 +492,8 @@ def test_cli_run_zero_coverage_is_clean_typer_error(monkeypatch, tmp_path):
     monkeypatch.setattr(sweep, "get_benchmark", lambda name, **kw: _SyntheticUnsupportedBench())
     # A real eval ref: `parse_eval_ref` validates the name against the registry before anything
     # loads a benchmark, so a placeholder now dies as an unknown eval, short of the gate.
-    res = cli.invoke(app, ["submit", "word-overlap", "demo", "--judge",
-                           "--output-dir", str(tmp_path)])
+    res = cli.invoke(app, ["task-exec", "word-overlap", "demo", "--judge",
+                           "--output-dir", str(tmp_path), "--run-id", "z1"])
     assert res.exit_code != 0
     assert not isinstance(res.exception, ValueError)
     assert "coverage" in res.output.lower()

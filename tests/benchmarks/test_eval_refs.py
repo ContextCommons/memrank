@@ -54,7 +54,7 @@ def _run(tmp_path, monkeypatch, eval_arg, run_id):
     # `--no-judge` because locomo now judges by default -- the judge IS its metric -- and what is
     # under test here is where artifacts are FILED, not what they score. Without it these runs
     # would refuse for want of an ANTHROPIC_API_KEY.
-    return runner.invoke(app, ["submit", "no-context", *eval_arg, "--on", "none", "--no-judge",
+    return runner.invoke(app, ["task-exec", "no-context", *eval_arg, "--on", "none", "--no-judge",
                                "--output-dir", str(tmp_path / "out"), "--run-id", run_id])
 
 
@@ -137,11 +137,3 @@ def test_compose_ref_refines_a_preset_but_refuses_a_contradiction():
     assert compose_ref("beam:1m", slice="smoke") == "beam:1m-smoke"
     with pytest.raises(RefError):
         compose_ref("beam:1m", tier="100k")
-
-
-def test_the_retired_flags_point_at_the_ref():
-    """`--slice smoke` silently did nothing on a benchmark with no slices, and on one with slices
-    it produced an artifact name that collided. Refused, with the replacement spelled out."""
-    result = runner.invoke(app, ["submit", "no-context", "demo", "--slice", "smoke", "--on", "none"])
-    assert result.exit_code != 0
-    assert "eval ref" in result.output

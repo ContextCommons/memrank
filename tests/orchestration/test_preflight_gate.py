@@ -83,7 +83,7 @@ def test_the_message_names_both_ways_out():
     message = str(caught.value)
     assert "UNREACHABLE_API_URL" in message, "name the variable, do not describe it"
     assert "base_url" in message
-    assert "--on local" in message
+    assert "start the engine" in message
 
 
 #: Real refs for the stubbed factories to wear. `_validate_source_target` resolves every label
@@ -102,7 +102,7 @@ class _Ran:
 
 
 def _submit(monkeypatch, tmp_path, capsys, factories, *args):
-    """Run `submit` with the target resolution stubbed to these factories.
+    """Run `task-exec` with the target resolution stubbed to these factories.
 
     Driven through ``runner_module.main`` rather than ``CliRunner.invoke``, because the error
     boundary lives on ``_BoundedTyper.__call__`` and CliRunner calls the click command underneath
@@ -117,8 +117,9 @@ def _submit(monkeypatch, tmp_path, capsys, factories, *args):
     monkeypatch.setattr(runner_module, "_run_targets",
                         lambda **kw: ("demo", [(LABELS[i], factory)
                                                for i, (_, factory) in enumerate(factories)]))
-    monkeypatch.setattr("sys.argv", ["memrank", "submit", "x", "demo",
-                                     "--output-dir", str(tmp_path / "out"), *args])
+    monkeypatch.setattr("sys.argv", ["memrank", "task-exec", "x", "demo",
+                                     "--output-dir", str(tmp_path / "out"),
+                                     "--run-id", "p1", "--run-id", "p2", *args])
     with pytest.raises(SystemExit) as exited:
         runner_module.main()
     printed = capsys.readouterr()
@@ -163,7 +164,7 @@ def test_a_dead_second_target_fails_before_the_first_one_ingests(monkeypatch, tm
 def test_in_process_targets_are_unaffected(monkeypatch, tmp_path):
     """The probe must not become a new way for a local demo run to fail."""
     monkeypatch.setenv("MEMRANK_RUNS_DIR", str(tmp_path / "runs"))
-    result = runner.invoke(app, ["submit", "word-overlap,no-context", "demo",
+    result = runner.invoke(app, ["task-exec", "word-overlap,no-context", "demo",
                                  "--output-dir", str(tmp_path / "out"),
                                  "--run-id", "p1", "--run-id", "p2"])
     assert result.exit_code == 0, result.output

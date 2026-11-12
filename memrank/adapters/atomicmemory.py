@@ -42,6 +42,11 @@ class AtomicMemory(Memory):
     The base URL defaults to ``http://localhost:3070`` and can be overridden
     via the ``base_url`` constructor argument or the
     ``ATOMICMEMORY_API_URL`` env var.
+
+    ``config_override``, when set, is sent as AtomicMemory's per-request
+    ``config_override`` on every ``/v1/memories/ingest``: an object of engine
+    settings the engine validates and applies to that request. ``None`` (the
+    default) leaves the ingest payload exactly as it is without it.
     """
 
     name = "atomicmemory"
@@ -62,6 +67,7 @@ class AtomicMemory(Memory):
         api_key: str | None = None,
         timeout_s: float | None = None,
         source_site: str = "memrank",
+        config_override: dict[str, Any] | None = None,
     ) -> None:
         prefix = type(self).env_prefix
         self.base_url = (base_url or os.environ.get(f"{prefix}API_URL", type(self).default_base_url)).rstrip("/")
@@ -80,6 +86,7 @@ class AtomicMemory(Memory):
             else float(os.environ.get(f"{prefix}TIMEOUT_S", _DEFAULT_TIMEOUT_S))
         )
         self.source_site = source_site
+        self.config_override = config_override
         self._isolation: str | None = None
         self._client: httpx.Client | None = None
         self.latency = LatencyCollector()
@@ -149,11 +156,13 @@ class AtomicMemory(Memory):
             if (doc.metadata or {}).get("relation_graph_role") == "seed":
                 self._ingest_relation_graph_seed(client, doc)
                 continue
-            payload = {
+            payload: dict[str, Any] = {
                 "user_id": self._user_id_for(doc),
                 "conversation": self._document_to_conversation_text(doc),
                 "source_site": self.source_site,
             }
+            if self.config_override is not None:
+                payload["config_override"] = self.config_override
             with self.latency.track("ingest"):
                 response = client.post("/v1/memories/ingest", json=payload)
                 adapter_errors.raise_for_status(response)

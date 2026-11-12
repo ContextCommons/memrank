@@ -59,7 +59,6 @@ network:
 ```bash
 memrank config set targets.path ~/evals
 memrank targets verify reference:native
-memrank submit reference:native demo
 ```
 
 No absolute path appears in the descriptor, so the folder is shareable as-is: a colleague unpacks

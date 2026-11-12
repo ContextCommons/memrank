@@ -46,26 +46,31 @@ RETIRED: dict[str, str] = {
     "preflight": "targets show",
 }
 
-#: Retired `submit` flag -> the sentence that tells the caller what to do instead. The value is
-#: a full clause, not a noun, because not every retirement HAS a replacement: some flags named a
-#: thing the positional arguments name now, and some named a thing that stopped existing.
+#: Commands removed outright, with no stub -> what to use instead. Unlike ``RETIRED`` they are not
+#: registered at all: `submit` could start a hosted run nothing bounded, and a stub would leave
+#: it a command (ATO-2366). The documentation tests read this so a page may say a command was
+#: removed without that sentence counting as teaching it.
+REMOVED: dict[str, str] = {"submit": "run"}
+
+#: Retired evaluation flag -> the sentence that tells a reader what to do instead. The value is
+#: a full clause, not a noun, because not every retirement HAS a replacement.
 #:
-#: A retired flag stays declared (hidden) rather than being deleted outright: a deleted option
-#: gets Click's "No such option", which says what is wrong and not what to type instead -- and
-#: the person typing the old form is exactly the person who needs to be told.
+#: No command declares these any more: the command that refused them, `submit`, is removed
+#: (ATO-2366). The table stays because the documentation tests walk it, so no published page
+#: teaches a flag the CLI does not take.
 RETIRED_FLAGS: dict[str, str] = {
     # The first three named the SUBJECT before `targets` existed, which the positional arguments
     # do now; two ways to say one thing is what the model's flag ontology exists to prevent, and
     # the cloud path already refused them.
-    "--adapter": "name the target positionally -- `memrank submit <target> <eval>`",
-    "--benchmark": "name the eval positionally -- `memrank submit <target> <eval>`",
-    "--all-adapters": "sweep with a comma -- `memrank submit target-a,target-b <eval>`",
+    "--adapter": "evaluate an agent -- `memrank run <eval> --agent <agent>`",
+    "--benchmark": "name the eval positionally -- `memrank run <eval> --agent <agent>`",
+    "--all-adapters": "run each agent with its own `memrank run <eval> --agent <agent>`",
     # A tier and a slice are not knobs on an evaluation, they SELECT one: `beam:100k-smoke` is a
     # different evaluation from `beam:1m`, with a different question count and non-comparable
     # numbers. As flags they read like `--workers`, and two runs of "beam" at different slices
     # wrote the same artifact filename, so the second silently replaced the first.
-    "--tier": "it rides the eval ref -- `memrank submit <target> beam:100k`",
-    "--slice": "it rides the eval ref -- `memrank submit <target> locomo:smoke`",
+    "--tier": "it rides the eval ref -- `beam:100k`",
+    "--slice": "it rides the eval ref -- `locomo:smoke`",
     # These two were deleted outright rather than retired, so they answered with Click's bare
     # "No such option" -- the exact failure this table exists to prevent, and worse than the
     # flags that at least pointed somewhere. Neither has a replacement to point AT, which is
@@ -79,22 +84,6 @@ RETIRED_FLAGS: dict[str, str] = {
 #: Click's convention for a usage error -- the caller asked for something that does not exist.
 #: Distinct from 1, which the surviving commands use for "ran, and the answer is no".
 RETIRED_EXIT_CODE = 2
-
-
-def refuse_retired_flags(given: dict[str, object]) -> None:
-    """Refuse any retired flag the caller supplied, saying what to do instead.
-
-    Args:
-        given: Retired flag spelling -> what the parser bound to it. A value that is ``None`` or
-            ``False`` was not supplied; anything else was.
-
-    Raises:
-        typer.BadParameter: On the first retired flag present, which exits
-            :data:`RETIRED_EXIT_CODE` -- the same code the retired command names use.
-    """
-    for flag, instead in RETIRED_FLAGS.items():
-        if given.get(flag):
-            raise typer.BadParameter(f"`{flag}` is retired; {instead}")
 
 
 def _make_stub(old: str, new: str):

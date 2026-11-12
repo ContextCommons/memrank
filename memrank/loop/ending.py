@@ -22,7 +22,7 @@ itself, so that nothing another system did is ever reported as a bug in memrank.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from memrank.api_client import ApiUnreachable
 from memrank.connect.base import AgentError, AgentUnreachable
@@ -34,6 +34,7 @@ from memrank.errors import ActionRequired, MemrankError
 from memrank.judging.providers import provider_label, reach_label
 from memrank.loop.explain import NO_CREDIT_REASON as _NO_CREDIT
 from memrank.loop.explain import JudgeFailed, account, capitalized
+from memrank.loop.grading_pool import RunUngraded
 from memrank.loop.report import achieved, failures
 from memrank.loop.run import ProbeIncomplete, RunAborted, UploadIncomplete
 from memrank.loop.trace import RunTrace
@@ -140,6 +141,21 @@ def _judge(end: _Ending, exc: JudgeFailed) -> Outcome:
                        steps=(*steps, end.again("Then judge the saved answers:")),
                        details=Details(capitalized(provider_label(exc.target.provider)),
                                        exc.details))
+
+
+def _ungraded(end: _Ending, exc: RunUngraded) -> Outcome:
+    """Answers left without a verdict: the ending of what stopped them -- the judge's provider,
+    or the evaluation's grader program -- told how many answers wait; otherwise the error's own
+    sentence, which names the resume."""
+    cause = exc.__cause__
+    if isinstance(cause, JudgeFailed):
+        stopped = _judge(end, cause)
+    elif isinstance(cause, CommandFailed):
+        stopped = _program(end, cause)
+    else:
+        return _failure(end, exc)
+    left = f"{exc.ungraded} answer{'' if exc.ungraded == 1 else 's'}"
+    return replace(stopped, happened=f"{left} could not be graded. {stopped.happened}")
 
 
 def _agent_check(end: _Ending, exc: AgentError, agent: AgentSpec) -> Outcome:
@@ -251,6 +267,8 @@ def _classify(end: _Ending, exc: BaseException) -> Outcome:
     agent = end.call.agent
     if isinstance(exc, JudgeFailed):
         return _judge(end, exc)
+    if isinstance(exc, RunUngraded):
+        return _ungraded(end, exc)
     if isinstance(exc, ProbeIncomplete) and isinstance(exc.__cause__, AgentError) and agent:
         return _agent_check(end, exc.__cause__, agent)
     if isinstance(exc, RunAborted | AgentUnreachable):

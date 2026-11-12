@@ -99,7 +99,7 @@ def test_the_message_names_the_directory_and_the_way_out():
     message = unportable_message({"mem0:on-my-laptop": Path("/repos/evals/targets")})
 
     assert "mem0:on-my-laptop" in message and "/repos/evals/targets" in message
-    assert "--on local" in message
+    assert "local placement" in message
     assert "memrank/targets/builtin/" not in message
 
 

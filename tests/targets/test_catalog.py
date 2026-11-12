@@ -267,7 +267,8 @@ def test_submitting_a_base_refuses_before_anything_is_launched(tmp_path, monkeyp
         "from: houseblend\nname: houseblend:espresso\ncomponents:\n"
         "  embedder: {provider: voyage, model: voyage-4-large, dims: 1024}\n", encoding="utf-8")
 
-    result = CliRunner().invoke(app, ["submit", "houseblend", "demo", "--on", "local"])
+    result = CliRunner().invoke(app, ["task-exec", "houseblend", "demo", "--on", "local",
+                                    "--run-id", "r1"])
 
     assert result.exit_code == 1
     assert "houseblend:espresso" in result.output      # named by the `base:variant` convention

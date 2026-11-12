@@ -17,7 +17,8 @@
 server. :mod:`memrank.service.app` exposes the very same object over HTTP for a shared service.
 Either way the rules live in :mod:`memrank.service.machine` and nowhere else.
 
-Nothing here judges. The result records every answer ungraded; ``memrank run`` judges it in
+Nothing here judges. Each accepted step's :class:`Ack` carries the questions it made final, so
+the runner can grade an answer as soon as it exists; the result records every answer ungraded; ``memrank run`` judges it in
 its own process with the organisation's key (decision 0037, :mod:`memrank.loop.judge`).
 """
 
@@ -43,7 +44,7 @@ from memrank.service.protocol import (
     Step,
     StepResult,
 )
-from memrank.service.results import build_result
+from memrank.service.results import build_result, final_questions, uses_model
 from memrank.service.store import RunStore
 
 
@@ -51,7 +52,9 @@ class RunNotFinished(MemrankError):
     """The result was asked for before every step was answered.
 
     Refused rather than returned partial: a result lists every question with its reference
-    answer, and handing references out mid-run would show them to the runner.
+    answer, and handing out the references of questions still to be asked would show them to
+    the runner. A question's reference is released only once its answer is final -- on the
+    :class:`Ack` of the step that made it so (decision R5).
     """
 
 
@@ -86,7 +89,9 @@ def _status(run_id: str, request: RunCreate, state: RunState) -> RunStatus:
     asked = {(r.case_id, r.question_index) for r in state.recorded.values() if r.op is Op.ASK}
     failed = [i for i, case_id in enumerate(state.case_ids) if case_id in state.failed_cases]
     unasked = sum(state.question_counts[i] - state.cases[i].question_index for i in failed)
-    return RunStatus(run_id=run_id, evaluation=_plan(run_id, request, state).evaluation,
+    plan = _plan(run_id, request, state)
+    return RunStatus(run_id=run_id, evaluation=plan.evaluation,
+                     evaluation_source=plan.source or plan.evaluation, uses_model=uses_model(plan),
                      judge=request.judge, cases=len(state.case_ids),
                      questions=sum(state.question_counts),
                      cases_finished=sum(case.finished for case in state.cases),
@@ -118,10 +123,13 @@ class EvaluationService:
 
     def post(self, run_id: str, step_id: str, result: StepResult) -> Ack:
         with self.store.transaction(run_id):
-            _, state = self.store.load(run_id)
+            request, state = self.store.load(run_id)
             state, duplicate = machine.submit(state, step_id, result)
             self.store.save_state(run_id, state)
-        return Ack(step_id=step_id, duplicate=duplicate)
+        if duplicate:
+            return Ack(step_id=step_id, duplicate=True)
+        outcomes = final_questions(_plan(run_id, request, state), state, step_id)
+        return Ack(step_id=step_id, outcomes=outcomes)
 
     def retry_failed(self, run_id: str) -> Reopened:
         """Run every failed case, and every failed answer, again as a fresh restart.
