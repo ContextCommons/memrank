@@ -456,7 +456,7 @@ def aws_context() -> dict:
     path = configured or DEFAULT_AWS_CONTEXT
     if not configured and not Path(path).exists():
         raise ConfigError(
-            f"no AWS context for --on cloud: {DEFAULT_AWS_CONTEXT!r} is not in the working "
+            f"no AWS context for a cloud run: {DEFAULT_AWS_CONTEXT!r} is not in the working "
             f"directory and MEMRANK_AWS_CONTEXT is unset. Write it as a JSON object with the "
             f"keys {_AWS_CONTEXT_KEY_LIST} -- the coordinates of the ECS cluster the run launches "
             f"into -- or point MEMRANK_AWS_CONTEXT at a copy you already have.")

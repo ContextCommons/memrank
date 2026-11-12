@@ -17,11 +17,11 @@ Run from the repo root:
 
     python examples/run-existing-target.py
 
-The target ref resolves exactly as `memrank submit` resolves it. `word-overlap` is a
+The target ref resolves exactly as the target catalog resolves it. `word-overlap` is a
 built-in control arm, so this runs offline; a real engine ref ("mem0",
 "hindsight:matched", or your own manifest on targets.path) works the same way BUT its
 engine must already be reachable -- `memrank.run` provisions nothing. Provisioning,
-run records, heartbeats and sync are what the CLI's `submit` adds on top.
+run records, heartbeats and sync are what a hosted run adds on top.
 """
 
 # The cell run, imported from its own module: `memrank.run` is now the typed run over

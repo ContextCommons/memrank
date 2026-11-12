@@ -107,6 +107,37 @@ may carry a raw composite for inspection, paired with its applicability declarat
 **Contract for consumers: use `composite_rankable` to decide whether a raw composite is valid
 for ranking, and `quality_metric` to say what it measures.**
 
+### Provisional scores, while a run is going
+
+`memrank run` judges each answer as soon as the agent gives it, alongside the agent rather than
+after it, so a run shows a score before it ends. That score is **provisional**, and it is always
+shown with how much of the run it covers -- for example "Provisional: 0.62 (412 of 1,986
+graded)".
+
+- **What it is.** The mean over the questions graded so far, with the same inclusion rule as the
+  final score: a judged question counts its score, and a question whose answer failed counts as
+  0. *n* is how many questions that covers; *N* is how many questions the run's plan asks. A
+  question still waiting for its verdict -- including one whose judging failed and will be
+  retried -- is not counted. Once every question is graded, the provisional mean equals the
+  final score.
+- **It carries no confidence interval.** The questions graded so far are not a random sample of
+  the run, so an interval computed over them would describe a sample that was never drawn. The
+  interval appears only on the final result.
+- **It drifts, most of all early.** Cases are graded roughly in plan order across the run's
+  parallel lanes, so the first graded questions come from the first cases rather than from a
+  random draw. Early cases are not a fair sample of an evaluation -- the same reason
+  [slice figures](#quality) are never quoted -- and the provisional score can move substantially
+  as later cases are graded. Read it as progress, not as a result.
+- **Only the sealed result is a measurement.** A run is finished when every question is graded:
+  its result then carries the final score with its interval, and that is the number to quote,
+  compare or publish. A run that stopped, or that ended with questions ungraded, has no final
+  score; it says how many questions are ungraded and how to finish them, and its provisional
+  score stays labelled provisional.
+- **A question's reference is released once its answer is final.** To grade an answer while the
+  run is going, the runner needs that question's reference answer. It receives it only after
+  the question's answer is final, so the runner never holds a reference while that question can
+  still be answered.
+
 ### SQuAD, the quick-start evaluation
 
 `squad-score` is full-passage retrieval recall over a fixed subset of SQuAD v1.1's development
@@ -149,7 +180,7 @@ says which is in the same artifact, beside the composite:
 A cell in which every unit failed reports `composite: null` rather than `0.0`, on the same rule
 as everywhere else: a score a system did not earn is not zero. The `failure-rate` measure is the
 same fact stated as a value, and [`docs/measures.md`](measures.md) has the whole of the rule.
-`memrank submit --fail-fast` restores the older behaviour of ending the cell at the first unit
+On the hosted engine-run path, `--fail-fast` restores the older behaviour of ending the cell at the first unit
 that raises. Two conditions end a run whatever that flag says: an exhausted provider rate limit
 (an account-wide condition, so remaining units would encounter the same exhausted limit) and an operator interrupt.
 
@@ -430,7 +461,7 @@ traces and the values, and `result.save(path)` keeps them. A receipt captures:
 
 ### Development observations versus reproducible evidence
 
-`memrank submit TARGET EVAL` starts a source-bound named target from the checkout declared in
+A source-bound named target run (formerly `memrank submit TARGET EVAL`, now removed) starts the target from the checkout declared in
 its central target file. It is the engine-development loop: each run gets a fresh native process,
 but it does not run an immutable executable artifact. Its receipt records the source commit,
 dirty flag, an opaque hash of tracked and untracked changes, native platform and launcher
@@ -442,7 +473,7 @@ organization for comparison; dirty-tree observations stay local; public leaderbo
 excludes both. A clean git tree does not promote one to reproducible evidence: a commit
 identifies source, not the compiled executable or its toolchain.
 
-Likewise, `--on none` against an already-running HTTP engine is an `endpoint_observation` unless
+Likewise, a run against an already-running HTTP engine is an `endpoint_observation` unless
 the engine exposes a resolved executable identity. It is useful for rapid diagnostics, and its
 long-lived state and unpinned process make it ineligible for publication.
 

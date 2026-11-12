@@ -7,7 +7,7 @@ recipe for it, so you can build the same container the published numbers were me
 docker build -t supermemory-server:0.0.3 examples/more/supermemory-image
 docker run --rm -p 6767:6767 -e ANTHROPIC_API_KEY=unused-by-supermemory supermemory-server:0.0.3
 
-SUPERMEMORY_BASE_URL=http://localhost:6767 uv run memrank submit supermemory demo --on none
+SUPERMEMORY_BASE_URL=http://localhost:6767 uv run python -c "import memrank; from memrank.evaluations import Demo; print(Demo().run(system=memrank.system('supermemory')))"
 ```
 
 The build context is this directory. Nothing outside it is read, so the two files here are the

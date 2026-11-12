@@ -80,15 +80,11 @@ def _no_default_to_configure(login: str) -> None:
               f"Ask an operator to grant your GitHub login ({login}) membership of an org, "
               f"then run:\n"
               f"      memrank config set defaults.org <slug>\n"
-              f"      Already a member? The same command names the org you want to submit to.")
+              f"      Already a member? The same command names the org your runs upload to.")
 
 
 def _configure_after_login(token: str) -> None:
-    """Turn a session into a working configuration: a default org, and cloud placement.
-
-    Signing in and being able to submit are different things, and the gap between them is
-    exactly the flags the golden path must not have. `defaults.on` is written HERE rather than
-    shipped, so a machine that never signed in stays local and nothing fails for lack of a login.
+    """Turn a session into a working configuration: a default org.
 
     The default org is configured on the FIRST login only. A later `auth login` -- a rotated
     token, a lapsed session -- must not quietly undo a default the user chose since, so an org
@@ -98,7 +94,6 @@ def _configure_after_login(token: str) -> None:
         response = http.get("/whoami")
     response.raise_for_status()
     body = response.json()
-    settings.put("defaults.on", "cloud")
     configured, source = settings.resolve("defaults.org")
     if configured is not None:
         # An env value shadows the file everywhere, so naming it here saves the user wondering
@@ -110,7 +105,6 @@ def _configure_after_login(token: str) -> None:
         style.say(f"  {style.good('✓')} default org: {org}")
     else:
         _no_default_to_configure(body["login"])
-    style.say(f"  {style.good('✓')} defaults: on=cloud")
 
 
 def _stored_token() -> str | None:
@@ -169,7 +163,7 @@ def _browserless_login(http) -> dict[str, str]:
 def login(no_browser: bool = typer.Option(
         False, "--no-browser",
         help="Print a URL to open elsewhere instead of launching a browser here.")) -> None:
-    """Sign in through the browser, and configure this machine to submit.
+    """Sign in through the browser, and configure this machine's default org.
 
     Falls back to the browserless flow on its own when there is no browser to open, rather
     than requiring ``--no-browser``: over SSH, the person who needs the flag is the person who

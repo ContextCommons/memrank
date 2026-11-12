@@ -1,0 +1,54 @@
+{
+  "kind": "agent",
+  "result": {
+    "run_id": "run-inline-old",
+    "evaluation": "locomo",
+    "agent": {"name": "older-agent", "version": "1"},
+    "identity": {
+      "evaluation": "locomo",
+      "dataset_version": "locomo10@2024-03",
+      "task_version": 2,
+      "seed": 0,
+      "cases_requested": 2,
+      "questions_per_case": 2,
+      "case_ids": ["conv-26", "conv-30"],
+      "agent": {"name": "older-agent", "version": "1"},
+      "judge_requested": true,
+      "judge_model": "claude-haiku-4-5",
+      "judge_samples": 1,
+      "memrank_version": "0.4.0"
+    },
+    "status": "complete",
+    "judged": true,
+    "notice": null,
+    "score": {"mean": 0.25, "ci95": [0.0, 0.5], "n": 4},
+    "per_category": {},
+    "failure_rate": 0.25,
+    "questions": 4,
+    "failed": 1,
+    "unjudged": 0,
+    "latency_ms": {"feed_p50": 40.0, "feed_p95": 60.0, "ask_p50": 200.0, "ask_p95": 250.0},
+    "cases": [
+      {"case_id": "conv-26", "status": "complete", "error": null, "restarts": 0, "questions": [
+        {"case_id": "conv-26", "question_id": "conv-26_q0", "question": "Who is Caroline?",
+         "reference": ["a counsellor"], "category": "single-hop", "status": "judged",
+         "answer": "A counsellor.", "error": null, "elapsed_ms": 210.0, "score": 1.0,
+         "passed": true, "rationale": "Same role."},
+        {"case_id": "conv-26", "question_id": "conv-26_q1", "question": "When did she move?",
+         "reference": ["2022"], "category": "temporal", "status": "judged",
+         "answer": "Last year.", "error": null, "elapsed_ms": 190.0, "score": 0.0,
+         "passed": false, "rationale": "No year given."}
+      ]},
+      {"case_id": "conv-30", "status": "complete", "error": null, "restarts": 0, "questions": [
+        {"case_id": "conv-30", "question_id": "conv-30_q0", "question": "What does Jon sell?",
+         "reference": ["dance lessons"], "category": "single-hop", "status": "judged",
+         "answer": "Dance classes.", "error": null, "elapsed_ms": 230.0, "score": 0.0,
+         "passed": false, "rationale": "Close but the judge disagreed."},
+        {"case_id": "conv-30", "question_id": "conv-30_q1", "question": "Where is his studio?",
+         "reference": ["downtown"], "category": "single-hop", "status": "failed",
+         "answer": null, "error": "agent returned HTTP 502", "elapsed_ms": 15.0, "score": 0.0,
+         "passed": null, "rationale": null}
+      ]}
+    ]
+  }
+}

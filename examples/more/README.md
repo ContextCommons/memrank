@@ -8,7 +8,7 @@ command-line pipeline and its result format, or need a live engine or Docker. Fo
 | | What it is | Needs |
 | --- | --- | --- |
 | [`explore-benchmark.py`](explore-benchmark.py) | Inspect a benchmark's tasks without running it or writing output. | nothing |
-| [`run-existing-target.py`](run-existing-target.py) | Drive a catalog target through the tracked-run pipeline, resolving the ref exactly as `memrank submit` does. | nothing |
+| [`run-existing-target.py`](run-existing-target.py) | Drive a catalog target through the tracked-run pipeline, resolving the ref exactly as the catalog does. | nothing |
 | [`native-adapter/`](native-adapter/README.md) | A translator: the contract over HTTP, in any language, without touching memrank. | nothing |
 | [`3-line-example.py`](3-line-example.py) | The smallest run against a real engine: one adapter, one benchmark, smoke slice. | a live engine |
 | [`supermemory-image/`](supermemory-image/README.md) | Build the engine image the `supermemory` target names. The image is built locally from the provided recipe. | Docker |

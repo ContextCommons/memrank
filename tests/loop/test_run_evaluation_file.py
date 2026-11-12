@@ -8,15 +8,12 @@ from __future__ import annotations
 
 import itertools
 import shutil
-from dataclasses import replace
 
 import pytest
 
 from memrank.connect.spec import AgentSpec
 from memrank.connect.template import transcript
 from memrank.judging.providers import ADAPTERS
-from memrank.loop import judge as loop_judge
-from memrank.loop import run as loop_run
 from memrank.loop.judge_key import JudgeKeyMissing
 from memrank.loop.run import Instruments, RunOptions, run_agent
 from memrank.service.cases import EvaluationChanged
@@ -25,7 +22,7 @@ from memrank.service.protocol import AgentRef, RunCreate, Step
 from memrank.service.store import FolderRunStore
 from tests.definitions.conftest import FIXTURES
 from tests.fixtures.agents.keyword_agent import answer
-from tests.loop.conftest import OrgApi
+from tests.loop.conftest import OrgApi, record_keys
 
 PASS = '{"passed": true, "rationale": "same"}'
 
@@ -67,12 +64,7 @@ def judged(monkeypatch) -> list[str | None]:
     """The key each judging was given; the judge model is a fake that passes everything."""
     keys: list[str | None] = []
 
-    def fake(result, api_key, cfg, judged=lambda: None):
-        keys.append(api_key)
-        return loop_judge.judge(result, api_key, replace(cfg, cache=False) if cfg else None,
-                                judged=judged)
-
-    monkeypatch.setattr(loop_run, "judge", fake)
+    record_keys(monkeypatch, keys)
     monkeypatch.setitem(ADAPTERS, "anthropic", lambda target, api_key, *, max_tokens: (
         lambda model, system, user, sampling: PASS))
     return keys

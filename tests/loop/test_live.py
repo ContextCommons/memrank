@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from memrank.loop import run as loop_run
 from memrank.loop.run import Instruments, RunOptions, run_agent
-from tests.loop.conftest import PAGE, OrgApi, run_id_of
+from tests.loop.conftest import PAGE, OrgApi, run_id_of, stub_grading
 from tests.loop.test_lanes import Memory, spec
 from tests.loop.test_run import quiet
 
@@ -16,7 +15,7 @@ OPTIONS = RunOptions(evaluation="locomo", judge=None)
 @pytest.fixture(autouse=True)
 def org(monkeypatch) -> OrgApi:
     fake = OrgApi()
-    monkeypatch.setattr(loop_run, "judge", lambda result, key, cfg, judged=None: result)
+    stub_grading(monkeypatch)
     return fake
 
 
@@ -86,7 +85,6 @@ def test_ctrl_c_leaves_the_run_stopped_online_and_a_resume_finishes_it_under_the
 
 def test_the_sample_that_starts_judging_counts_every_step_done(engine, tmp_path, org,
                                                               monkeypatch):
-    monkeypatch.setattr(loop_run, "judge", lambda result, key, cfg, judged=None: result)
     frozen = Instruments(clock=lambda: 0.0, sleep=lambda s: None, echo=lambda line: None)
     run_agent(engine, spec(Memory()), RunOptions(evaluation="locomo"), tmp_path,
               org.hosted(), frozen)  # a clock that never moves sends no sample during steps

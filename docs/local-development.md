@@ -57,14 +57,14 @@ every machine and every run; nothing else in the output does.
 <a id="not-core-the-command-line"></a>
 ## Command-line development
 
-The examples above use Python. The [command line](misc/command-line.md) provides tracked and
-placed runs; what is particular to a checkout is here.
+The examples above use Python. The command line evaluates agents with `memrank run` (see the
+[README](../README.md#first-run)); what is particular to a checkout is here.
 
 ### Run it from the checkout
 
 ```bash
 uv run memrank --help
-uv run memrank targets ls
+uv run memrank agents ls
 uv run memrank evals ls
 ```
 
@@ -82,39 +82,18 @@ Code edits then apply immediately; changing *dependencies* needs a re-install.
 
 ### Run one through it
 
-The same synthetic pair as above, submitted through the command line rather than called -- which
-is where the command line's own older words apply, `target` for the system and `eval` for the
-evaluation:
+`memrank run` evaluates an agent. It needs you signed in (`memrank auth login`) and records every
+run in your organisation's run history, so it is not a free local check. The cheapest one uses a
+model-free agent and no judge:
 
 ```bash
-uv run python -m memrank.runner submit word-overlap demo --on none
+uv run memrank run locomo --agent tests/fixtures/agents/keyword-command.yaml --cases 2 --questions 3 --no-judge
 ```
 
-Always choose placement explicitly for a local check. A bare submission can use a configured
-cloud default and start a paid run. The Python check above has no placement or submission step.
+Without `--no-judge`, the run judges with your organisation's saved key for the judge `--judge`
+names (`anthropic:claude-haiku-4-5` by default) and sends evaluation content to that provider.
 
-For live engine runs, start the target backend first and set its URL if it differs from the
-default:
-
-```bash
-export ATOMICMEMORY_API_URL=http://localhost:3070
-export MEM0_HTTP_URL=http://localhost:8888
-export HINDSIGHT_API_URL=http://localhost:8888
-export SUPERMEMORY_BASE_URL=http://localhost:6767
-
-uv run memrank submit atomicmemory locomo:smoke --on none
-```
-
-`--on local` provisions a disposable, isolated stack per run from the target's manifest instead,
-which needs Docker. `memrank targets show <ref>` prints the composition and marks ✔/✘ per secret
-before anything is spent.
-
-Judged runs send evaluation content to Anthropic:
-
-```bash
-export ANTHROPIC_API_KEY=...
-uv run memrank submit atomicmemory beam:100k-smoke --judge --on none
-```
+`memrank submit`, the older command that ran named engines, has been removed: use `memrank run`.
 
 Datasets download on first use and cache under `MEMRANK_CACHE_DIR`. Each loader also honours a
 local path override -- `LOCOMO_DATA_PATH`, `BEAM_DATA_PATH`,

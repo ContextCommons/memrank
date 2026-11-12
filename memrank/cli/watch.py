@@ -68,7 +68,7 @@ POLL_INTERVAL_TTY_S = 2.0
 
 
 def watch(run_ids: list[str] = typer.Argument(..., help="run id(s), as printed by "
-                                              "`memrank submit` / `memrank runs ls`")) -> None:
+                                              "`memrank runs ls`")) -> None:
     """Attach to run(s) until they end: exit 0 all done, 1 any failed, 2 still going at timeout."""
     root = registry.runs_root()
     for rid in run_ids:
@@ -443,7 +443,7 @@ KILL_REFUSED = 1
 
 
 def kill(run_ids: list[str] = typer.Argument(..., help="run id(s), as printed by "
-                                             "`memrank submit` / `memrank ps`")) -> None:
+                                             "`memrank ps`")) -> None:
     """Stop background run(s): exit 0 all stopped, non-zero if any target could not be.
 
     Variadic in `watch`'s shape, because a comma sweep mints one run per target and hands back

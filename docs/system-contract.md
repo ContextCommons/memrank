@@ -338,8 +338,9 @@ Tell memrank where to look, once:
 memrank config set targets.path ~/evals        # or MEMRANK_TARGETS_PATH, or several, os.pathsep-separated
 memrank targets ls                             # myengine:dev, with the directory it came from
 memrank targets verify myengine:dev            # check your translator against this contract
-memrank submit myengine:dev demo
 ```
+
+(`memrank submit`, which ran a target by name, has been removed; evaluate with `memrank run` instead -- see the [README](../README.md#first-run).)
 
 **The descriptor uses relative paths**, so the folder can be copied,
 shared, or committed, and a colleague needs only their own `targets.path` line. `binding.root`
@@ -385,11 +386,8 @@ them, whatever shape your auth takes.
 
 #### Comparing against the catalog
 
-A translator-backed target can sweep alongside anything else:
-
-```bash
-memrank submit myengine:dev,mem0,hindsight demo
-```
+A translator-backed target could sweep alongside anything else through `memrank submit`, which
+has been removed; evaluate with `memrank run` instead (see the [README](../README.md#first-run)).
 
 Each target is provisioned and torn down before the next begins. Quality compares across all of
 them; latency compares only within a transport class, so your `translator` row is never silently

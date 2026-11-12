@@ -95,6 +95,24 @@ def test_ingest_sends_string_conversation_and_no_metadata():
     assert payload["source_site"] and payload["user_id"]
 
 
+def test_ingest_without_config_override_sends_exactly_the_three_fields():
+    a, stub = _adapter_with_stub({"/v1/memories/ingest": {}})
+    a.ingest([Document(id="s", content="hello", user_id="u1")])
+    assert stub.calls == [("/v1/memories/ingest",
+                           {"user_id": "u1", "conversation": "hello", "source_site": "memrank"})]
+
+
+def test_ingest_carries_the_config_override_as_given():
+    override = {"any_engine_setting": "value", "nested": {"n": 1}}
+    a, stub = _adapter_with_stub({"/v1/memories/ingest": {}})
+    a.config_override = override
+    a.ingest([Document(id="s1", content="one", user_id="u1"),
+              Document(id="s2", content="two", user_id="u1")])
+    assert [payload["config_override"] for _, payload in stub.calls] == [override, override]
+    assert [sorted(payload) for _, payload in stub.calls] == [
+        ["config_override", "conversation", "source_site", "user_id"]] * 2
+
+
 def test_relation_graph_seed_uses_quick_verbatim_ingest_with_metadata():
     a, stub = _adapter_with_stub({"/v1/memories/ingest/quick": {"stored_memory_ids": ["m1"]}})
     a.ingest([Document(

@@ -249,9 +249,9 @@ def _report_or_exit(rows: list, log_path: Path) -> None:
 
 
 def _render_cloud(target: Manifest, aws_json: str | None) -> dict:
-    """Render the ECS task definition exactly as `memrank submit --on cloud` would.
+    """Render the ECS task definition exactly as a hosted run would.
 
-    Goes through the same :func:`memrank.placement.cloud.render_from_context` the submit path uses.
+    Goes through the same :func:`memrank.placement.cloud.render_from_context` the hosted path uses.
     It used to build an ``AwsContext`` from the raw JSON keys, which meant `--aws
     .aws-context.json` never actually worked -- that file has a different shape -- and anything
     inspected here was not necessarily what would launch. Inspection is only worth having if it
@@ -264,7 +264,8 @@ def _render_cloud(target: Manifest, aws_json: str | None) -> dict:
         json.loads(sys.stdin.read()) if aws_json == "-" else config.aws_context())
     return render_from_context(
         target, ctx,
-        command=f"memrank submit {target.name} <benchmark> --output-dir /work/results",
+        command=f"memrank task-exec {target.name} <benchmark> --output-dir /work/results "
+                "--run-id <run-id>",
         image_tag="<image-tag>")
 
 
@@ -273,7 +274,7 @@ def render(
     ref: str = typer.Argument(..., help="target ref, e.g. hindsight:matched"),
     for_: str = typer.Option(..., "--for", help="placement to render for: cloud or local"),
     aws: str = typer.Option(None, "--aws", help="AWS context JSON ('-' for stdin); defaults to "
-                                                "the same file `memrank submit --on cloud` uses"),
+                                                "the same file a hosted run uses"),
     overrides: list[str] = typer.Option(None, "--set", help="key=value overrides"),
 ) -> None:
     """Render the deployment document that runs a target, generated from its manifest."""

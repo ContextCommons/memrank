@@ -1,0 +1,186 @@
+{
+  "answers": [
+    {
+      "question_id": "c1_q0",
+      "case_id": "c1",
+      "position": 0,
+      "question": "What colour is Ann's car?",
+      "reference": [
+        "blue"
+      ],
+      "grading": {
+        "gold_answers": [
+          "blue"
+        ],
+        "kind": "qa"
+      },
+      "category": "single-hop",
+      "status": "answered",
+      "answer": "a blue car",
+      "error": null,
+      "elapsed_ms": 140.0,
+      "retrieval_ms": 9.5
+    },
+    {
+      "question_id": "c1_q1",
+      "case_id": "c1",
+      "position": 1,
+      "question": "When did Ann buy it?",
+      "reference": [
+        "May 2023"
+      ],
+      "grading": {
+        "gold_answers": [
+          "May 2023"
+        ],
+        "kind": "qa"
+      },
+      "category": "temporal",
+      "status": "answered",
+      "answer": "June",
+      "error": null,
+      "elapsed_ms": 110.0,
+      "retrieval_ms": null
+    },
+    {
+      "question_id": "c2_q0",
+      "case_id": "c2",
+      "position": 2,
+      "question": "Where does Bo live?",
+      "reference": [
+        "Lima"
+      ],
+      "grading": {
+        "gold_answers": [
+          "Lima"
+        ],
+        "kind": "qa"
+      },
+      "category": "single-hop",
+      "status": "failed",
+      "answer": null,
+      "error": "feed failed: HTTP 500 from the agent",
+      "elapsed_ms": null,
+      "retrieval_ms": null
+    },
+    {
+      "question_id": "c2_q1",
+      "case_id": "c2",
+      "position": 3,
+      "question": "What is Bo's dog called?",
+      "reference": [
+        "Rex"
+      ],
+      "grading": {
+        "gold_answers": [
+          "Rex"
+        ],
+        "kind": "qa"
+      },
+      "category": "multi-hop",
+      "status": "failed",
+      "answer": null,
+      "error": "feed failed: HTTP 500 from the agent",
+      "elapsed_ms": null,
+      "retrieval_ms": null
+    },
+    {
+      "question_id": "c3_q0",
+      "case_id": "c3",
+      "position": 4,
+      "question": "Which city did Cy visit?",
+      "reference": [
+        "Paris"
+      ],
+      "grading": {
+        "gold_answers": [
+          "Paris"
+        ],
+        "kind": "qa"
+      },
+      "category": "single-hop",
+      "status": "answered",
+      "answer": "Paris, France",
+      "error": null,
+      "elapsed_ms": 95.0,
+      "retrieval_ms": null
+    },
+    {
+      "question_id": "c3_q1",
+      "case_id": "c3",
+      "position": 5,
+      "question": "Which day was the trip?",
+      "reference": [
+        "Tuesday"
+      ],
+      "grading": {
+        "gold_answers": [
+          "Tuesday"
+        ],
+        "kind": "qa"
+      },
+      "category": "temporal",
+      "status": "answered",
+      "answer": "Tuesday",
+      "error": null,
+      "elapsed_ms": 100.0,
+      "retrieval_ms": null
+    }
+  ],
+  "judging": {
+    "origin": "live",
+    "judge": "anthropic:claude-haiku-4-5",
+    "judge_provider": "anthropic",
+    "judge_model": "claude-haiku-4-5",
+    "judge_endpoint": null,
+    "judge_settings": {
+      "max_tokens": 1024,
+      "max_tokens_field": "max_tokens"
+    },
+    "judge_prompt_version": "2026-09-29.1",
+    "judge_samples": 1,
+    "judge_source": "run"
+  },
+  "verdicts": [
+    {
+      "question_id": "c1_q0",
+      "status": "judged",
+      "score": 1.0,
+      "passed": true,
+      "rationale": "matches",
+      "error": null,
+      "probability": null,
+      "decision": null
+    },
+    {
+      "question_id": "c1_q1",
+      "status": "judged",
+      "score": 0.0,
+      "passed": false,
+      "rationale": "differs",
+      "error": null,
+      "probability": null,
+      "decision": null
+    },
+    {
+      "question_id": "c3_q0",
+      "status": "unjudged",
+      "score": null,
+      "passed": null,
+      "rationale": null,
+      "error": "judge call failed: HTTP 529 overloaded",
+      "probability": null,
+      "decision": null
+    },
+    {
+      "question_id": "c3_q1",
+      "status": "judged",
+      "score": 1.0,
+      "passed": true,
+      "rationale": "matches",
+      "error": null,
+      "probability": null,
+      "decision": null
+    }
+  ]
+}

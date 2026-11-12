@@ -43,7 +43,7 @@ _BUILTIN_BASES = {"Exception", "BaseException", "RuntimeError", "ValueError", "O
 
 
 #: The exact override slot that spilled a traceback: a stray shell token, no `=`.
-BAD_OVERRIDE = ["submit", "myengine", "demo", "--on", "cloud", "pull"]
+BAD_OVERRIDE = ["task-exec", "myengine", "demo", "--run-id", "r1", "pull"]
 
 
 def _run(argv: list[str], monkeypatch, *, entry=None) -> None:

@@ -37,8 +37,8 @@ BASE = {"target": "word-overlap", "benchmark_arg": "demo", "overrides": []}
 
 
 def test_every_run_parameter_is_classified():
-    """Fails when a parameter is added to `run` without deciding whether a cloud task needs it."""
-    params = set(inspect.signature(runner.submit).parameters)
+    """Fails when a parameter is added to `task-exec` without deciding whether a task needs it."""
+    params = set(inspect.signature(runner.task_exec).parameters)
     unclassified = params - _CLASSIFIED
     assert not unclassified, (
         f"{sorted(unclassified)} not classified for --on cloud. Add each to REMOTE_VALUE_FLAGS / "
@@ -55,8 +55,8 @@ def test_no_parameter_is_classified_twice():
 
 def test_no_classified_name_is_stale():
     """A renamed or removed parameter must not linger in the table pretending to be forwarded."""
-    params = set(inspect.signature(runner.submit).parameters)
-    assert _CLASSIFIED <= params, f"{sorted(_CLASSIFIED - params)} no longer exist on `run`"
+    params = set(inspect.signature(runner.task_exec).parameters)
+    assert _CLASSIFIED <= params, f"{sorted(_CLASSIFIED - params)} no longer exist on `task-exec`"
 
 
 def test_the_measurement_knobs_are_forwarded():
@@ -83,10 +83,10 @@ def test_no_renderer_emits_a_retired_flag():
 
 
 def test_tier_and_slice_ride_the_ref_not_flags():
-    """After the submit path derives tier/slice from the ref, they must NOT come back as argv."""
+    """After a submitter derives tier/slice from the ref, they must NOT come back as argv."""
     argv = remote_argv({**BASE, "benchmark_arg": "beam:100k-smoke",
                         "tier": "100k", "slice": "smoke"})
-    assert argv[:3] == ["submit", "word-overlap", "beam:100k-smoke"]
+    assert argv[:3] == ["task-exec", "word-overlap", "beam:100k-smoke"]
     assert "--tier" not in argv and "--slice" not in argv
     assert "100k" not in argv[3:] and "smoke" not in argv[3:]
 

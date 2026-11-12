@@ -263,8 +263,8 @@ Declaring nothing is the default and is not a disagreement: all five registered 
 declare no criteria, which is what keeps somebody else's scorer acceptable over their questions.
 
 **What the instance route does not reach.** A benchmark passed as an object has no catalog ref, so
-`memrank submit`, cloud placement and `memrank evals ls` do not know it exists. Reaching those means
-giving it a name, which is [registration](#register-the-benchmark) below.
+`memrank evals ls` does not know it exists. Reaching it means giving it a name, which is
+[registration](#register-the-benchmark) below.
 
 ### Where the data comes from
 
@@ -276,7 +276,9 @@ and honor a `<NAME>_DATA_PATH` env var so a reader can point at a local copy.
 ### Register the benchmark
 
 Add the class to `memrank/benchmarks/__init__.py`'s `REGISTRY`. It then has a ref: `memrank evals
-ls` lists it, `memrank submit <target> <name>` runs it, and the cloud can resolve it.
+ls` lists it. `memrank run` puts only its shipped evaluations to an agent; to put your own
+questions to one, write an [evaluation file](evaluation-files.md). (`memrank submit`, which ran a
+registered benchmark by name, has been removed.)
 Registration decides where the code lives and what may address it, and changes nothing about how
 the evaluation is loaded or scored.
 

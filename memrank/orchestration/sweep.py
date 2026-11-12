@@ -65,6 +65,7 @@ from memrank.placement.remote_argv import (
     REMOTE_SWITCHES,
     REMOTE_TRISTATE,
     REMOTE_VALUE_FLAGS,
+    TASK_VERB,
 )
 from memrank.rate_limit import RateLimitGate
 from memrank.runs import checkpoint, push, registry
@@ -281,9 +282,9 @@ def _run_local_sweep(factories: list[tuple[str, AdapterFactory]], opts: _ExecOpt
                      run_ids: list[str]) -> None:
     """Execute mode: run a sweep in THIS process -- one run per target, in order, blocking.
 
-    Entered only via the hidden ``--run-id``: by the background child a submission spawned, or
-    by the cloud container (whose rendered command chains ``&& upload`` and therefore needs a
-    submit that blocks).
+    Entered only through the hidden ``task-exec``: by the background child a local submission
+    spawned, or by the cloud container (whose rendered command chains ``&& upload`` and
+    therefore needs an executor that blocks).
     """
     _install_kill_handler()
     opts = _sweep_gates(factories, opts)
@@ -304,26 +305,6 @@ def _run_local_sweep(factories: list[tuple[str, AdapterFactory]], opts: _ExecOpt
     # already holds its own one-cell summary.
     _write_summary(opts.output_dir, opts.eval_ref, opts.tier, opts.slice_, opts.k,
                    opts.seed, cells)
-
-
-def _submit_local_sweep(factories: list[tuple[str, AdapterFactory]], opts: _ExecOpts, *,
-                        params: dict[str, Any]) -> None:
-    """Submit mode: gate loudly, mint one run per target, hand the sweep to ONE background
-    child, print the bare ids on stdout, and return -- the interface model's only lifecycle.
-
-    The gates' results are discarded here; the child rebuilds them (tokenizer and dataset
-    caches make the second pass cheap). What must not be discarded is their refusals.
-    """
-    _sweep_gates(factories, opts)
-    runs = _mint_local_runs(factories, benchmark=opts.benchmark, slice_=opts.slice_,
-                            tier=opts.tier, run_ids=None, experiments=opts.experiments)
-    try:
-        _spawn_child(params, runs)
-    except BaseException:
-        _mark_unstarted(runs, reason="the background spawn failed")
-        raise
-    for run in runs:
-        style.out(run.run_dir.name)  # bare ids on stdout: the machine-readable handle
 
 
 def _mint_local_runs(factories: list[tuple[str, AdapterFactory]], *, benchmark: str,
@@ -493,7 +474,7 @@ def _child_argv(params: dict[str, Any], run_ids: list[str]) -> list[str]:
     spawn and start cannot reroute it), ``--output-dir``, ``--org`` -- plus one ``--run-id``
     per minted run, which is what puts it in execute mode.
     """
-    argv = ["submit", params["target"], params["benchmark_arg"],
+    argv = [TASK_VERB, params["target"], params["benchmark_arg"],
             *(params.get("overrides") or [])]
     for name, flag in REMOTE_VALUE_FLAGS:
         if params.get(name) is not None:

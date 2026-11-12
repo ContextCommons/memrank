@@ -1,9 +1,8 @@
 # The command line
 
-> **Deprecated:** this page describes memrank's older, pre-agent surface, which still ships but will be removed. To evaluate an agent, use `memrank run`; see the [README](../../README.md).
+> **Deprecated:** this page describes memrank's older, pre-agent surface. `memrank submit` has been removed; the commands that inspect earlier runs still ship but will be removed. To evaluate an agent, use `memrank run`; see the [README](../../README.md).
 
-Use the command line to submit tracked runs, choose where they run, inspect their status and
-save reproducibility receipts. For direct Python evaluation, see [Start here](../getting-started.md).
+Use the command line to inspect tracked runs and their reproducibility receipts. For direct Python evaluation, see [Start here](../getting-started.md).
 
 The command line uses a separate run pipeline and stored result format from
 `evaluation.run()` in Python.
@@ -35,30 +34,13 @@ useful information to include in an error report. `uv tool upgrade memrank` upgr
 
 ## The loop
 
-`demo` and `word-overlap` can run locally without a service or API key. Select `--on none`
-explicitly for a local check: a configured cloud default can otherwise submit a paid run.
-The transcript below shows the tracked-run workflow; it omits that placement flag.
-
-```console
-$ memrank submit word-overlap demo
-run 20260826-213813__demo__7becda  (word-overlap × demo)
-track: memrank watch 20260826-213813__demo__7becda
-
-$ memrank runs ls
-ID                             TARGET        EVAL  PLACE  STATE  SYNCED   AGE  DONE  SCORE   JUDGE
-20260826-213813__demo__7becda  word-overlap  demo  local  done   pending   8s  100%  0.8000  not judged
-```
-
-`submit` always returns immediately with the run id(s); `watch <id>` blocks on them (its exit code
-is the outcome: 0 all done, 1 any failed, 2 still going at timeout), `runs ls` lists them,
-the JUDGE column names who graded each score (`not judged` for a score no judge produced),
-`runs show <id>` gives the full record -- state, where it ran, exit code, artifact location -- and
-`kill <id>` stops one.
+`memrank submit`, which started tracked runs of named targets, has been removed: evaluate an agent
+with `memrank run` instead (see the [README](../../README.md#first-run)). The commands below that
+inspect earlier runs still work.
 
 ```bash
-memrank runs ls --live           # what's still going (memrank ps says the same thing)
-memrank logs <id> -f             # the run's log, wherever it ran, followed
-memrank runs sync                # push finished local runs to your org, pull finished cloud ones
+memrank runs ls                  # runs, newest first
+memrank runs show <id>           # one run in full
 ```
 
 ## Finding your way around
@@ -68,7 +50,7 @@ memrank targets ls               # what can be evaluated (hindsight, atomicmemor
 memrank evals ls                 # what to evaluate against (locomo, beam, longmemeval, demo, ...)
 memrank targets show hindsight   # the exact composition, and ✔/✘ per secret it needs
 memrank evals show locomo        # units, slices, tiers, quality metric, judge requirement
-memrank submit --help            # every flag, grouped
+memrank run --help               # every flag, grouped
 ```
 
 `memrank targets show <ref>` marks ✔/✘ per secret **before** anything is spent, so a missing key
@@ -77,42 +59,14 @@ surfaces as a refusal rather than a half-finished run. Store one with `memrank s
 
 ## Where a run happens
 
-`--on` selects the placement. The default is `defaults.on` (`memrank config ls`), which is `none`
-on a fresh install.
-
-| | |
-|---|---|
-| `--on none` | an engine you are already running, at its configured URL |
-| `--on local` | a disposable, isolated stack provisioned per run from the target manifest -- needs Docker |
-| `--on cloud` | submitted to the hosted memrank platform -- needs a signed-in session (below) |
-
-```bash
-export HINDSIGHT_API_URL=http://localhost:8888
-memrank submit hindsight locomo:smoke --on none
-```
-
-The variable above points at an engine you started. Whether you can obtain that engine's image at
-all differs per target -- [engine images](engine-images.md) says which, and what to run for the
-two you cannot pull.
-
-Engine URL defaults, each overridable by its environment variable:
-
-| Engine | Variable | Default |
-|---|---|---|
-| AtomicMemory | `ATOMICMEMORY_API_URL` | `http://localhost:3070` |
-| Mem0 (HTTP) | `MEM0_HTTP_URL` | `http://localhost:8888` |
-| Hindsight | `HINDSIGHT_API_URL` | `http://localhost:8888` |
-| Supermemory | `SUPERMEMORY_BASE_URL` | `http://localhost:6767` |
-
-Judged runs send evaluation content to Anthropic and need `ANTHROPIC_API_KEY`. They are on by
-default for `locomo`, `longmemeval` and `beam`, whose only quality metric is the judge's, and off
-where the evaluation scores itself. `--no-judge` measures latency and cost without a judged quality score.
+Placement belonged to the removed `memrank submit`. `memrank run`
+runs next to your agent and uploads every run to your organisation. Whether you can obtain an
+engine's image differs per target -- [engine images](engine-images.md) says which.
 
 ## The hosted platform
 
-Local runs work without signing in and store their records on your machine. Signing in is
-needed only to submit runs to AtomicStrata's hosted platform and to share a run record with an
-organisation.
+`memrank run` needs a sign-in: it uploads every run to your organisation's run history, and keeps
+a local run folder as the working record.
 
 ```bash
 memrank auth login
@@ -121,15 +75,15 @@ memrank config ls       # every setting, its value, and where that value came fr
 ```
 
 A browser opens; approve with GitHub. Login also configures the machine -- it writes your default
-org and points submissions at the platform, so later submissions can use those defaults. Use `--on none` explicitly for local checks. Only the *first* login writes those defaults, so a later sign-in never overrides one you
+org. Only the *first* login writes that default, so a later sign-in never overrides one you
 chose since (change it with `memrank config set defaults.org <slug>`).
 
 > **"no default org"?** Membership is not self-served yet. Hosted runs are, for now, limited to
 > accounts AtomicStrata has provisioned; local placements are not.
 
-Hosted runs are held to your org's limits -- a quota on how many you may have started and still
-running, and, for a run composed in the browser rather than submitted from the CLI, that org's
-run-shape ceilings; a submission over either is refused naming the limit it crossed.
+Hosted runs are composed in the browser and held to your org's limits -- a quota on how many you
+may have started and still running, and that org's run-shape ceilings; a submission over either is
+refused naming the limit it crossed.
 
 <details>
 <summary>Signing in over SSH, or anywhere with no browser</summary>
@@ -181,7 +135,6 @@ The table lists available commands. Run `memrank <command> --help` for options.
 | Command | What it does |
 |---|---|
 | `memrank --version` / `memrank version` | the version, and where this build came from |
-| `memrank submit TARGET EVAL [K=V...]` | submit a (target, eval) cell -- or a comma sweep -- and print one id per target |
 | `memrank ps` | list running evals; `--all` also shows finished, failed and stale ones |
 | `memrank watch RUN_ID...` | attach to run(s) until they end |
 | `memrank kill RUN_ID...` | stop background run(s) |
@@ -202,7 +155,7 @@ The table lists available commands. Run `memrank <command> --help` for options.
 | `memrank secrets rm NAME` | remove a secret from the wallet, or from an org's vault with `--org` |
 | `memrank secrets import-env` | copy API keys out of a `.env` file into the wallet, once |
 | `memrank secrets path` | print the wallet file path |
-| `memrank auth login` | sign in through the browser, and configure this machine to submit |
+| `memrank auth login` | sign in through the browser, and configure this machine's default org |
 | `memrank auth logout` | forget the stored CLI token on this machine |
 | `memrank auth status` | who you are signed in as, and which orgs you can act on |
 | `memrank config set KEY VALUE` | store a setting |
@@ -210,9 +163,8 @@ The table lists available commands. Run `memrank <command> --help` for options.
 | `memrank config ls` | every setting: its effective value, and which source supplied it |
 
 Some older names still exist as stubs that refuse and name their replacement -- `login`, `logout`,
-`whoami`, `list-benchmarks`, `list-runs`, `run`, `secrets list`, `status` and `preflight`, and the
-`submit` flags `--adapter`, `--benchmark`, `--all-adapters`, `--tier`, `--slice`, `--ack-egress`
-and `--max-judge-calls`. Typing one tells you what to type instead.
+`whoami`, `list-benchmarks`, `list-runs`, `secrets list`, `status` and `preflight`. Typing one
+tells you what to type instead.
 
 ## Known limitations
 
@@ -222,9 +174,7 @@ and `--max-judge-calls`. Typing one tells you what to type instead.
 - **`memrank watch` of a cloud run** downloads artifacts straight from object storage on success,
   which needs credentials most people will not have. Follow cloud runs with `runs ls` instead.
 - **Engine-backed cloud targets** (`mem0`, `atomicmemory`, `hindsight`, `supermemory`) are not
-  serving yet. The same targets work under `--on none` and `--on local`.
-
-Local placements -- the ones this page leads with -- are not affected by any of the above.
+  serving yet.
 
 <a id="telling-us-something-broke"></a>
 ## Report a problem

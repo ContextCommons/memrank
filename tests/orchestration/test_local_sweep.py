@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""The submit lifecycle: detach by default, one run per target, execute mode via --run-id.
+"""The local sweep lifecycle: one run per target, a background child, execute mode via --run-id.
 
-The interface model ("Everything detaches"): ``submit`` returns immediately with one run id per
-target, everywhere. A background child (or the cloud container) re-enters ``submit`` with the
-hidden repeatable ``--run-id`` -- execute mode, the only blocking path. Refusal gates run in the
-submitting parent so they land on a terminal and a refused sweep records nothing.
+`memrank submit` -- the CLI parent that detached -- is removed (ATO-2366). The MCP server's local
+placement still mints runs and spawns ONE background child, which (like the cloud container)
+enters the hidden `task-exec` with one `--run-id` per minted run: execute mode, the only
+blocking path.
 """
 from __future__ import annotations
 
@@ -43,15 +43,15 @@ def _restore_sigterm():
 
 #: `demo` declares no slices and always ignored `--slice`; the flag is now retired in favour
 #: of the eval ref, so the sweep names the evaluation and nothing else.
-_SWEEP_ARGS = ["submit", "word-overlap,no-context", "demo", "--on", "none"]
+_SWEEP_ARGS = ["task-exec", "word-overlap,no-context", "demo", "--on", "none"]
 
 
 class _FakeProc:
     pid = 424242
 
 
-def _submit(tmp_path, monkeypatch, *args):
-    """Submit mode: default behavior, with the background spawn captured instead of run."""
+def _spawn(tmp_path, monkeypatch) -> dict:
+    """The local parent's half: mint one run per target, then hand the sweep to one child."""
     from memrank.orchestration import sweep
 
     spawned: dict = {}
@@ -62,8 +62,13 @@ def _submit(tmp_path, monkeypatch, *args):
 
     monkeypatch.setenv("MEMRANK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(sweep.subprocess, "Popen", fake_popen)
-    result = runner.invoke(app, [*_SWEEP_ARGS, "--output-dir", str(tmp_path / "out"), *args])
-    return result, spawned
+    factories = [("word-overlap", None), ("no-context", None)]
+    runs = sweep._mint_local_runs(factories, benchmark="demo", slice_=None, tier=None,
+                                  run_ids=None)
+    params = {"target": "word-overlap,no-context", "benchmark_arg": "demo", "judge": False,
+              "output_dir": tmp_path / "out", "on": "none"}
+    sweep._spawn_child(params, runs)
+    return spawned
 
 
 def _execute(tmp_path, monkeypatch, *args):
@@ -78,56 +83,24 @@ def _statuses() -> dict[str, dict]:
     return {d.name: run_status.read(d) for d in root.iterdir() if d.is_dir()}
 
 
-def test_submit_returns_immediately_with_bare_ids_on_stdout(tmp_path, monkeypatch):
-    result, spawned = _submit(tmp_path, monkeypatch)
+def test_the_child_runs_task_exec_with_one_run_id_per_minted_run(tmp_path, monkeypatch):
+    """The child is handed the parsed parameters, never the invoking process's sys.argv."""
+    argv = _spawn(tmp_path, monkeypatch)["argv"]
 
-    assert result.exit_code == 0, result.output
-    statuses = _statuses()
-    assert len(statuses) == 2
-    assert all(s["state"] == "queued" for s in statuses.values())
-    assert {s["target"] for s in statuses.values()} == {"word-overlap", "no-context"}
-    assert all(s["experiment_id"] for s in statuses.values())
-    assert all(s["experiment_spec"]["eval_ref"] == "demo" for s in statuses.values())
-    assert spawned["argv"], "a background child must have been spawned"
-    stdout_ids = [ln for ln in result.stdout.splitlines() if ln in statuses]
-    assert sorted(stdout_ids) == sorted(statuses), "bare ids, one per line, on stdout"
-
-
-def test_the_child_argv_is_rebuilt_from_params_not_sys_argv(tmp_path, monkeypatch):
-    """sys.argv is not reliably this command's own (under CliRunner it is pytest's); the child
-    must be handed the parsed parameters, or a detached run silently runs something else."""
-    result, spawned = _submit(tmp_path, monkeypatch)
-
-    argv = spawned["argv"]
     assert argv[:3] == [sys.executable, "-m", "memrank.runner"]
     child = argv[3:]
-    assert child[:3] == ["submit", "word-overlap,no-context", "demo"]
-    # The one legitimate user path is --output-dir's value (here a pytest tmp dir); nothing
-    # ELSE may smell of the invoking process's argv.
-    out_i = child.index("--output-dir")
-    scrapable = child[:out_i] + child[out_i + 2:]
-    assert not any("pytest" in a or a.endswith(".py") for a in scrapable)
+    assert child[:3] == ["task-exec", "word-overlap,no-context", "demo"]
     assert "--on none" in " ".join(child)
     ids = [child[i + 1] for i, a in enumerate(child[:-1]) if a == "--run-id"]
     assert sorted(ids) == sorted(_statuses()), "one --run-id per minted run, in order"
 
 
 def test_the_heartbeats_adopt_the_child_pid(tmp_path, monkeypatch):
-    """The parent exits immediately; heartbeats carrying its pid would classify the queued
+    """The parent returns immediately; heartbeats carrying its pid would classify the queued
     sweep as stale. They must carry the pid of the process that will actually run it."""
-    _submit(tmp_path, monkeypatch)
+    _spawn(tmp_path, monkeypatch)
 
     assert all(s["pid"] == _FakeProc.pid for s in _statuses().values())
-
-
-def test_a_refused_sweep_records_nothing_and_spawns_nothing(tmp_path, monkeypatch):
-    """Gates run in the parent: the refusal lands on the terminal, not in a background log."""
-    result, spawned = _submit(tmp_path, monkeypatch, "--unit", "no-such-unit-xyz")
-
-    assert result.exit_code != 0
-    assert not spawned, "nothing may be spawned after a refusal"
-    root = registry.runs_root()
-    assert not root.exists() or not list(root.iterdir()), "no run may be recorded"
 
 
 def test_execute_mode_runs_to_completion_under_the_given_ids(tmp_path, monkeypatch):
@@ -212,7 +185,7 @@ def test_the_kill_handler_raises_and_resets_the_disposition(tmp_path, monkeypatc
 
 def test_the_sweep_log_lives_with_the_first_run(tmp_path, monkeypatch):
     """One child, one stdout: run.log in the first run's dir, siblings point at it."""
-    _submit(tmp_path, monkeypatch)
+    _spawn(tmp_path, monkeypatch)
 
     statuses = _statuses()
     with_log = [rid for rid, s in statuses.items()
@@ -221,15 +194,6 @@ def test_the_sweep_log_lives_with_the_first_run(tmp_path, monkeypatch):
     shared = [s for s in statuses.values() if s.get("log_run")]
     assert len(shared) == 1
     assert shared[0]["log_run"] == with_log[0]
-
-
-def test_wait_and_detach_no_longer_exist(tmp_path, monkeypatch):
-    """Rejected shapes (interface model): waiting is a verb (`watch`); detached is the only
-    lifecycle, so a flag naming it would name an inconsistency."""
-    for flag in ("--wait", "--detach"):
-        result, _ = _submit(tmp_path, monkeypatch, flag)
-        assert result.exit_code != 0
-        assert "no such option" in result.output.lower()
 
 
 # --- what a finished run does about the org universe ------------------------------------------- #

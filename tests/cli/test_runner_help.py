@@ -32,7 +32,8 @@ runner = CliRunner()
 DIMENSIONS = ("agents", "evals", "runs", "auth", "secrets")
 
 #: The engine-hosting path, hidden from help and still runnable (ATO-2343): (group, command).
-HIDDEN = (((), "submit"), ((), "targets"), ((), "ps"), ((), "logs"), ((), "watch"),
+#: `task-exec` is the internal executor `submit` left behind (ATO-2366).
+HIDDEN = (((), "task-exec"), ((), "targets"), ((), "ps"), ((), "logs"), ((), "watch"),
           ((), "kill"), (("runs",), "logs"), (("runs",), "watch"), (("runs",), "kill"),
           (("runs",), "sync"))
 
@@ -94,19 +95,6 @@ def test_the_root_callback_leaves_no_args_showing_help():
 
     assert "Usage:" in result.output
     assert "Commands" in result.output
-
-
-def test_run_judge_needs_no_second_flag_for_real_data(monkeypatch):
-    """`--judge` on a non-synthetic benchmark used to be refused without `--ack-egress`.
-
-    The gate is retired -- `--judge` already names the provider it sends to, and the browser path
-    never asked -- so the command proceeds past the point that used to refuse it. It still fails
-    here, on the engine that is not running, which is what proves the egress check is gone rather
-    than merely quiet.
-    """
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    result = runner.invoke(app, ["submit", "word-overlap", "locomo:smoke", "--judge", "--on", "none"])
-    assert "egress" not in result.output.lower() or "sends retrieved content" in result.output
 
 
 def test_run_names_its_judge_as_provider_model_and_the_old_flag_is_gone():

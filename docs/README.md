@@ -60,7 +60,7 @@ Python result API.
 
 | Task | Page |
 |---|---|
-| Submit, watch and inspect a tracked run | [The command line](misc/command-line.md) |
+| Inspect runs from the older, deprecated command line | [The command line](misc/command-line.md) |
 | Check container availability and prerequisites | [Engine images](misc/engine-images.md) |
 
 ## Working on memrank itself

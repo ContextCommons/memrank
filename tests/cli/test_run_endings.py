@@ -26,6 +26,7 @@ from memrank.definitions.commands import CommandFailed
 from memrank.judging.providers import ProviderError, resolve
 from memrank.loop import run as loop_run
 from memrank.loop.explain import judge_failure
+from memrank.loop.grading_pool import RunUngraded
 from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.run import Finished, ProbeIncomplete, RunAborted, UploadIncomplete
 from memrank.loop.trace import Stage
@@ -158,6 +159,15 @@ CASES: list[tuple[str, Callable, tuple[str, ...], str, tuple[str, ...], tuple[st
      stops(CommandFailed("The grader command exited 1: python grade.py\nKeyError: 'score'"),
            Stage.JUDGING, steps_done=True), (), "action", (RESUME,),
      ("Your evaluation's program failed", "Details from your program:", "KeyError")),
+    ("judge-down-to-the-end",
+     stops(with_cause(RunUngraded("2 answers could not be graded", ungraded=2), refused(400, CREDIT)),
+           Stage.JUDGING, steps_done=True), (), "action", (SAVE, RESUME),
+     ("2 answers could not be graded. Anthropic refused", "has no credit left")),
+    ("grader-program-down-to-the-end",
+     stops(with_cause(RunUngraded("1 answer could not be graded", ungraded=1),
+                      CommandFailed("The grader command exited 1: python grade.py")),
+           Stage.JUDGING, steps_done=True), (), "action", (RESUME,),
+     ("1 answer could not be graded. The grader command exited 1",)),
     ("ctrl-c", stops(KeyboardInterrupt()), (), "action", (RESUME,), ("you pressed Ctrl-C",)),
     ("api-unreachable-at-start", stops(UNREACHABLE, Stage.SETUP, run=False), (), "action",
      ("memrank run locomo --agent full-context",),

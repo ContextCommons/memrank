@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memrank"
-version = "0.5.2"
+version = "0.6.0"
 description = "Evaluate your agent on your tasks."
 readme = "README.md"
 license = "Apache-2.0"
@@ -21,10 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# What `pip install memrank` gets: the CLI, and everything needed to run an evaluation -- locally
-# or by submitting it to the platform. The accounts API's own stack is NOT here; see the `api`
-# extra. A user installing the command should not download a web framework and a Postgres driver
-# to run `memrank submit`, and tests/repo/test_import_weight.py fails if one creeps back in.
+# What `pip install memrank` gets: the CLI, and everything needed to run an evaluation. The
+# accounts API's own stack is NOT here; see the `api` extra. A user installing the command should
+# not download a web framework and a Postgres driver to run `memrank run`, and
+# tests/repo/test_import_weight.py fails if one creeps back in.
 dependencies = [
     "requests>=2.31",
     "httpx>=0.26",          # the CLI's client for the memrank API

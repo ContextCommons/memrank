@@ -173,8 +173,9 @@ def _run(*args, tmp_path, monkeypatch):
     from memrank.runner import app
     monkeypatch.setenv("MEMRANK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
-    return CliRunner().invoke(app, ["submit", "word-overlap", "demo",
-                                    "--judge", *args])
+    return CliRunner().invoke(app, ["task-exec", "word-overlap", "demo",
+                                    "--judge", "--output-dir", str(tmp_path / "out"),
+                                    "--run-id", "j1", *args])
 
 
 #: Typer draws output inside an 80-column box, so a sentence is broken across lines with a
@@ -231,8 +232,9 @@ def test_a_two_target_sweep_is_costed_for_both(tmp_path, monkeypatch):
     from memrank.runner import app
     monkeypatch.setenv("MEMRANK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
-    result = CliRunner().invoke(app, ["submit", "word-overlap,no-context", "demo",
-                                      "--judge"])
+    result = CliRunner().invoke(app, ["task-exec", "word-overlap,no-context", "demo",
+                                      "--judge", "--output-dir", str(tmp_path / "out"),
+                                      "--run-id", "j1", "--run-id", "j2"])
     output = _unwrapped(result.output)
 
     assert "~38 judge calls" in output

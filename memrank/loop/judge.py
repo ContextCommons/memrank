@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 from memrank.definitions import resolve
 from memrank.definitions.base import Definition, ModelJudge, Verdict
@@ -106,10 +107,57 @@ def _identity(model: ModelJudge) -> JudgeIdentity:
                          judge_settings=record["settings"])
 
 
+@dataclass(frozen=True)
+class RunGrading:
+    """How one run's answers are graded: its evaluation's graders, and the judge model when any
+    of them calls it. Built once per run; :meth:`grade` is safe to call from many threads."""
+
+    definition: Definition
+    model: ModelJudge | None
+
+    def grade(self, question: QuestionOutcome) -> Verdict:
+        """The verdict on one recorded answer."""
+        return self.definition.grader_for(question).grade(question, self.model)
+
+    @property
+    def identity(self) -> JudgeIdentity | None:
+        """The judge the verdicts are from; None when no grader calls a model."""
+        return _identity(self.model) if self.model else None
+
+    @property
+    def samples(self) -> int:
+        """How many gradings each verdict is a vote over; 0 when model-free."""
+        return self.model.cfg.samples if self.model else 0
+
+    @property
+    def prompt_version(self) -> str | None:
+        """What names the judge's questions; None when model-free."""
+        return prompt_version(self.model) if self.model else None
+
+
+def run_grading(definition: Definition, uses_model: bool, api_key: str | None,
+                cfg: JudgeConfig | None = None) -> RunGrading:
+    """The grading of a run on ``definition``, with the judge model only when ``uses_model``.
+
+    Args:
+        definition: The evaluation the run is on.
+        uses_model: Whether any of its graders calls the judge model.
+        api_key: The organisation's key for the judge ``cfg`` names; None when no grader calls
+            the model, or a ``completer`` judges.
+        cfg: The judge configuration, :data:`DEFAULT_JUDGE` when none is given.
+    """
+    cfg = cfg or JudgeConfig(judge=DEFAULT_JUDGE)
+    return RunGrading(definition=definition,
+                      model=_model(cfg, api_key) if uses_model else None)
+
+
 def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None,
           workers: int = DEFAULT_JUDGE_WORKERS,
           judged: Callable[[], None] = lambda: None) -> RunResult:
-    """``result`` with every recorded answer graded and its scores computed.
+    """``result`` with every recorded answer graded and its scores computed, all at once.
+
+    ``memrank run`` grades each answer as it lands (:mod:`memrank.loop.grading_pool`); this
+    grades a finished result whole, for judging a run again (decision 0040).
 
     Args:
         result: The run as recorded, every answer ``not_judged``.
@@ -120,24 +168,20 @@ def judge(result: RunResult, api_key: str | None, cfg: JudgeConfig | None = None
         workers: How many answers are judged at once -- the old path's judge-worker default.
         judged: Called once per answer as its verdict lands, from whichever worker judged it.
     """
-    cfg = cfg or JudgeConfig(judge=DEFAULT_JUDGE)
     definition = definition_of(result)
     answered = [q for case in result.cases for q in case.questions if q.status == "not_judged"]
-    graders = [definition.grader_for(q) for q in answered]
-    uses_model = any(grader.uses_model for grader in graders)
-    model = _model(cfg, api_key) if uses_model else None
+    uses_model = any(definition.grader_for(q).uses_model for q in answered)
+    grading = run_grading(definition, uses_model, api_key, cfg)
 
-    def one(pair: tuple[QuestionOutcome, int]) -> Verdict:
-        question, index = pair
-        verdict = graders[index].grade(question, model)
+    def one(question: QuestionOutcome) -> Verdict:
+        verdict = grading.grade(question)
         judged()
         return verdict
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         # in question order, however they finish
-        verdicts = list(pool.map(one, [(q, i) for i, q in enumerate(answered)]))
+        verdicts = list(pool.map(one, answered))
     by_question = {q.question_id: v for q, v in zip(answered, verdicts, strict=True)}
-    return apply_verdicts(result, by_question,
-                          judge=_identity(model) if model else None,
-                          judge_samples=model.cfg.samples if model else 0,
-                          judge_prompt_version=prompt_version(model) if model else None)
+    return apply_verdicts(result, by_question, judge=grading.identity,
+                          judge_samples=grading.samples,
+                          judge_prompt_version=grading.prompt_version)

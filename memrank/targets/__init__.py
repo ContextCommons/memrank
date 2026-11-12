@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""Deprecated: the target catalog behind `memrank submit` and `memrank targets`. Evaluate an
+"""Deprecated: the target catalog behind the removed `memrank submit` and `memrank targets`. Evaluate an
 agent with `memrank run` instead; see the README. `resolve.parse_ref` is used by the current
 path (`benchmarks/refs`) and does not warn.
 

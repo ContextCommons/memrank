@@ -97,7 +97,7 @@ def run(
     Args:
         engine: A catalog name (``"mem0"``, ``"hindsight:matched"``, ``"word-overlap"``)
             or a ready :class:`MemoryAdapter` instance. A name is resolved exactly as
-            ``memrank submit`` resolves it; a container-backed engine must already be
+            the target catalog resolves it; a container-backed engine must already be
             reachable -- this function provisions nothing.
         evaluation: A catalog name (``"demo"``, ``"locomo:smoke"``, ``"beam:100k-smoke"``)
             or a :class:`Benchmark` instance. ``load()`` may download the dataset into the
@@ -116,7 +116,7 @@ def run(
         target: Deprecated spelling of ``engine``. Accepted, warns, removed at step 22.
         eval: Deprecated spelling of ``evaluation``. Accepted, warns, removed at step 22.
 
-    Defaults mirror ``memrank submit``'s (k=10, repeats=3, seed=42, token_budget=5000,
+    Defaults mirror the hosted run's (k=10, repeats=3, seed=42, token_budget=5000,
     priced at gpt-4o-mini), so a script and a sweep of the same cell agree.
 
     Note: ``seed`` seeds the process-global ``random`` module, and the tokenizer

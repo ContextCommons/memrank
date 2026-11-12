@@ -1,0 +1,120 @@
+{
+  "kind": "agent",
+  "answers": "answers.json",
+  "result": {
+    "run_id": "run-live-judged",
+    "evaluation": "locomo",
+    "agent": {
+      "name": "fixture-agent",
+      "version": null,
+      "spec_path": null,
+      "spec_sha256": null
+    },
+    "identity": {
+      "evaluation": "locomo",
+      "dataset_version": "fixture@v1",
+      "task_version": 2,
+      "seed": 0,
+      "cases_requested": null,
+      "questions_per_case": null,
+      "case_ids": [
+        "c1",
+        "c2",
+        "c3"
+      ],
+      "agent": {
+        "name": "fixture-agent",
+        "version": null,
+        "spec_path": null,
+        "spec_sha256": null
+      },
+      "judge_requested": true,
+      "judge": "anthropic:claude-haiku-4-5",
+      "judge_provider": "anthropic",
+      "judge_model": "claude-haiku-4-5",
+      "judge_endpoint": null,
+      "judge_settings": {
+        "max_tokens": 1024,
+        "max_tokens_field": "max_tokens"
+      },
+      "judge_source": "run",
+      "judge_samples": 1,
+      "judge_prompt_version": "2026-09-29.1",
+      "memrank_version": "0.5.1",
+      "evaluation_version": null,
+      "evaluation_fingerprint": null,
+      "evaluation_source": null
+    },
+    "status": "complete",
+    "judged": true,
+    "notice": null,
+    "score": {
+      "mean": 0.4,
+      "ci95": [
+        0.0,
+        1.0
+      ],
+      "n": 5
+    },
+    "per_category": {
+      "multi-hop": {
+        "mean": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "n": 1
+      },
+      "single-hop": {
+        "mean": 0.5,
+        "ci95": [
+          0.0,
+          1.0
+        ],
+        "n": 2
+      },
+      "temporal": {
+        "mean": 0.5,
+        "ci95": [
+          0.0,
+          1.0
+        ],
+        "n": 2
+      }
+    },
+    "failure_rate": 0.3333333333333333,
+    "questions": 6,
+    "failed": 2,
+    "unjudged": 1,
+    "latency_ms": {
+      "feed_p50": 50.0,
+      "feed_p95": 80.0,
+      "ask_p50": 110.0,
+      "ask_p95": 140.0
+    },
+    "retrieval": null,
+    "cases": [
+      {
+        "case_id": "c1",
+        "status": "complete",
+        "error": null,
+        "restarts": 1,
+        "questions": []
+      },
+      {
+        "case_id": "c2",
+        "status": "failed",
+        "error": "feed failed: HTTP 500 from the agent",
+        "restarts": 0,
+        "questions": []
+      },
+      {
+        "case_id": "c3",
+        "status": "complete",
+        "error": null,
+        "restarts": 1,
+        "questions": []
+      }
+    ]
+  }
+}

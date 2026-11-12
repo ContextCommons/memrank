@@ -253,7 +253,7 @@ def test_a_refused_connection_names_the_engine_the_address_and_the_variable():
     assert "'mem0'" in message
     assert "http://localhost:8888/configure" in message
     assert "MEM0_HTTP_URL" in message
-    assert "--on local" in message
+    assert "start the engine" in message
 
 
 def test_a_refused_connection_never_quotes_a_credential_in_the_address():

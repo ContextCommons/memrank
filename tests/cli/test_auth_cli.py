@@ -130,7 +130,6 @@ def test_a_single_membership_is_configured_without_asking(settings_store, never_
     auth_cli._configure_after_login("tok")
 
     assert settings.get("defaults.org") == "atomicstrata"
-    assert settings.get("defaults.on") == "cloud"
 
 
 def test_several_memberships_take_the_server_declared_default(settings_store, never_asks,
@@ -173,8 +172,16 @@ def test_no_membership_configures_no_org_and_names_the_fix(settings_store, never
     auth_cli._configure_after_login("tok")
 
     assert settings.get("defaults.org") is None
-    assert settings.get("defaults.on") == "cloud"
     assert "config set defaults.org" in capsys.readouterr().err
+
+
+def test_login_does_not_report_a_placement_default(settings_store, never_asks,
+                                                   monkeypatch, capsys):
+    """defaults.on went with memrank submit (decision 0043); login must not claim to set it."""
+    monkeypatch.setattr(auth_cli, "_authenticated_client", _whoami(["atomicstrata"]))
+    auth_cli._configure_after_login("tok")
+
+    assert "on=cloud" not in capsys.readouterr().err
 
 
 def test_status_reports_session_expiry_and_the_active_default(settings_store, monkeypatch):

@@ -18,7 +18,6 @@ Rules that hold throughout:
 - Run everything yourself, from the folder of the project that contains their agent.
 - Never print, log or commit a secret, and never ask the user to paste a key into the chat.
   Refer to keys by environment variable name only.
-- Do not use `memrank submit`: an older command that starts paid cloud runs.
 - Every `memrank run` ends with a block saying what happened and what to do (step 7). Follow it
   rather than guessing. When a step is the user's (a browser sign-in, a key, a decision), give
   them the command, stop, and wait for them.

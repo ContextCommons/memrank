@@ -33,17 +33,18 @@ from memrank.connect.probe import leak_probe
 from memrank.connect.process import started
 from memrank.connect.spec import AgentSpec
 from memrank.errors import MemrankError
-from memrank.judging.judge import JudgeConfig
-from memrank.judging.providers import resolve as resolve_judge
 from memrank.loop import header, lanes
 from memrank.loop.client import retry_unreached
-from memrank.loop.explain import cause, explained, judge_failure
-from memrank.loop.judge import DEFAULT_JUDGE, judge, needs_key
-from memrank.loop.judge_key import missing_key
+from memrank.loop.event_log import EventLog
+from memrank.loop.explain import cause, explained
+from memrank.loop.grading import saved_result, start_grading
+from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.live import LiveRun
+from memrank.loop.live_answers import Recorder
 from memrank.loop.output import RESULT_FILE, write_outputs
 from memrank.loop.trace import RunTrace, Stage
 from memrank.loop.upload import Hosted, upload
+from memrank.loop.uploader import Uploader, start_uploading
 from memrank.service.protocol import (
     Ack,
     Op,
@@ -55,6 +56,7 @@ from memrank.service.protocol import (
     Step,
     StepResult,
 )
+from memrank.service.scoring import apply_verdicts
 from memrank.term import style
 
 #: The started agent's own stdout and stderr, kept beside the run it served.
@@ -191,8 +193,12 @@ def _once(agent: AgentSpec, tools: Instruments) -> Callable[[AgentError], None]:
 
 
 def _drive(evaluator: Evaluator, agent: AgentSpec, run_id: str, tools: Instruments,
-           concurrency: int, live: LiveRun) -> None:
-    """Carry every step the service hands out, ``concurrency`` cases at a time, until done."""
+           concurrency: int, live: LiveRun, recorder: Recorder) -> None:
+    """Carry every step the service hands out, ``concurrency`` cases at a time, until done.
+
+    Each answer the service accepts is logged and handed to the grading pool as it lands; the
+    pool takes it without blocking, so judging never holds a lane up (D1).
+    """
 
     def carry(step: Step, failed: Callable[[AgentError], None]) -> StepResult:
         try:
@@ -203,7 +209,7 @@ def _drive(evaluator: Evaluator, agent: AgentSpec, run_id: str, tools: Instrumen
 
     def post(step: Step, result: StepResult) -> None:
         assert step.step_id is not None  # only DONE carries no step id
-        evaluator.post(run_id, step.step_id, result)
+        recorder.answered(evaluator.post(run_id, step.step_id, result))
         tools.echo(_progress(step, result))
         live.step_done()
 
@@ -223,13 +229,17 @@ class Finished:
 
 def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, output_root: Path,
               hosted: Hosted, tools: Instruments | None = None) -> Finished:
-    """Register the run online, start the agent if it says how, probe it, drive the run, judge
-    it and upload it.
+    """Register the run online, start the agent if it says how, probe it, drive the run while
+    judging each answer as it lands, and upload it.
 
-    The run's link is printed before the first step. The run's folder gets ``result.json`` and
-    ``report.html`` with the answers as soon as the steps are done, then again once they are
-    judged; the judged pair is what is uploaded. A run that stops short -- Ctrl-C, an agent that
-    went away, a failed upload -- is marked stopped online and says how to resume it.
+    The run's link is printed before the first step. Every final answer and every verdict is
+    appended to the folder's ``events.jsonl`` as it happens, and sent to the organisation as it
+    is appended (:mod:`memrank.loop.uploader`); an API that takes no live results is refused
+    before the first step. The folder gets ``result.json`` and
+    ``report.html`` with the answers as soon as the steps are done, then again once they are all
+    graded; the judged pair is what is uploaded. A run that stops short -- Ctrl-C, an agent that
+    went away, answers left ungraded, a failed upload -- is marked stopped online and says how
+    to resume it.
     """
     tools = tools or Instruments()
     trace = tools.trace
@@ -240,21 +250,29 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
         _retry_failed(evaluator, run_id, folder, tools)
     live = _online(evaluator, agent, hosted, options, tools)
     trace.url = live.url
+    folder.mkdir(parents=True, exist_ok=True)  # a shared service's run has no folder here yet
+    recorder = Recorder(EventLog(folder))
     try:
+        uploader = start_uploading(live.events, recorder.log, hosted.http, tools.echo, tools.sleep)
         trace.stage = Stage.CHECK
+        status = evaluator.status(run_id)
+        recorder.pool = start_grading(status, hosted, options.judge, recorder.log, live,
+                              _resume_command(run_id, agent, options.judge))
         # A resumed run through a shared service names its evaluation only in its status.
-        evaluation = options.evaluation or evaluator.status(run_id).evaluation
-        with started(agent.start, folder / AGENT_LOG, evaluation):
+        with started(agent.start, folder / AGENT_LOG, options.evaluation or status.evaluation):
             _probe(agent)
             trace.stage = Stage.STEPS
-            _drive(evaluator, agent, run_id, tools, options.concurrency, live)
+            _drive(evaluator, agent, run_id, tools, options.concurrency, live, recorder)
         tools.echo(style.prefixed("All steps done"))
-        result = _finished(evaluator, run_id, folder, hosted, tools, live, options.judge)
+        result = _finished(evaluator, run_id, tools, live, recorder)
         trace.stage, trace.judged = Stage.UPLOAD, result
-        url = _upload(hosted, result, folder, agent, tools)
+        url = _upload(hosted, result, folder, agent, tools, uploader)
     except BaseException as exc:
-        live.stopped(_stop_reason(exc, run_id, agent))
+        live.stopped(_stop_reason(exc, run_id, agent, options.judge))
         raise
+    finally:
+        if recorder.pool is not None:
+            recorder.pool.close(wait_for_gradings=False)  # drained unless the run is stopping
     return Finished(result=result, folder=folder, url=url or live.url, org=hosted.org)
 
 
@@ -300,8 +318,10 @@ def _online(evaluator: Evaluator, agent: AgentSpec, hosted: Hosted, options: Run
 
 
 def _upload(hosted: Hosted, result: RunResult, folder: Path, agent: AgentSpec,
-            tools: Instruments) -> str | None:
+            tools: Instruments, uploader: Uploader) -> str | None:
+    """Send every live event the organisation lacks, then the sealed run."""
     try:
+        uploader.drain()
         return upload(hosted, result, tools.echo)
     except MemrankError as exc:
         raise UploadIncomplete(
@@ -309,7 +329,13 @@ def _upload(hosted: Hosted, result: RunResult, folder: Path, agent: AgentSpec,
             f"--agent {agent.ref.spec_path or '<agent file>'}` to send it again.") from exc
 
 
-def _stop_reason(exc: BaseException, run_id: str, agent: AgentSpec) -> str:
+def _resume_command(run_id: str, agent: AgentSpec, spec: str | None) -> str:
+    """The command that continues the run, naming its judge unless it is the default one."""
+    words = f"memrank run --resume {run_id} --agent {agent.ref.spec_path or '<agent file>'}"
+    return words if spec in (None, DEFAULT_JUDGE) else f"{words} --judge {spec}"
+
+
+def _stop_reason(exc: BaseException, run_id: str, agent: AgentSpec, spec: str | None) -> str:
     """Why the run stopped, as its page says it, with the command that continues it."""
     if isinstance(exc, KeyboardInterrupt):
         why = "interrupted (Ctrl-C)"
@@ -317,55 +343,37 @@ def _stop_reason(exc: BaseException, run_id: str, agent: AgentSpec) -> str:
         why = (str(exc).splitlines() or [type(exc).__name__])[0][:STOP_REASON_CHARS]
     else:
         why = f"{type(exc).__name__}: {exc}"[:STOP_REASON_CHARS]
-    return (f"{why} -- resume with `memrank run --resume {run_id} --agent "
-            f"{agent.ref.spec_path or '<agent file>'}`")
+    return f"{why} -- resume with `{_resume_command(run_id, agent, spec)}`"
 
 
-def _saved(folder: Path) -> RunResult | None:
-    """The folder's result when nothing is left to do to it: judged, or never to be judged."""
-    path = folder / RESULT_FILE
-    if not path.exists():
-        return None
-    saved = RunResult.model_validate_json(path.read_text(encoding="utf-8"))
-    return saved if saved.judged or not saved.identity.judge_requested else None
+def _finished(evaluator: Evaluator, run_id: str, tools: Instruments, live: LiveRun,
+              recorder: Recorder) -> RunResult:
+    """The run's final result: the saved one on a resume, else recorded and judged here.
 
-
-def _judge_config(spec: str | None, hosted: Hosted) -> JudgeConfig | None:
-    """The configuration the run judges with: its spec, and the endpoint it resolved to."""
-    if spec is None or hosted.judge is None:
-        return None  # no grader calls the model, so no judge is configured
-    endpoint = hosted.judge.endpoint
-    return JudgeConfig(judge=spec, endpoints=(endpoint,) if endpoint else ())
-
-
-def _finished(evaluator: Evaluator, run_id: str, folder: Path, hosted: Hosted,
-              tools: Instruments, live: LiveRun, spec: str | None) -> RunResult:
-    """The run's final result: the saved one on a resume, else recorded and judged here."""
-    saved = _saved(folder)
+    Its verdicts are the ones the event log holds -- graded while the steps ran, or now, for any
+    answer still without one (:meth:`GradingPool.finish`).
+    """
+    folder = recorder.log.path.parent
+    saved = saved_result(folder)
     if saved is not None:
         return saved
     recorded = evaluator.result(run_id)
     write_outputs(folder, recorded)
     tools.trace.recorded = recorded
-    if not recorded.identity.judge_requested:
+    recorder.reconcile(recorded)  # answers accepted but never logged, if the runner stopped
+    pool = recorder.pool
+    if pool is None:
         return recorded
-    keyed = needs_key(recorded)
-    cfg = _judge_config(spec, hosted)
-    if keyed and (hosted.judge_key is None or cfg is None):
-        raise missing_key(hosted.org, hosted.judge or resolve_judge(spec or DEFAULT_JUDGE))
     answers = recorded.questions - recorded.failed
     # The judge and whose key it uses were named before the first step (:mod:`header`).
-    tools.echo(style.prefixed(f"Judging {answers} answers ..." if keyed
+    tools.echo(style.prefixed(f"Judging {answers} answers ..." if pool.grading.model
                               else f"Grading {answers} answers ..."))
     tools.trace.stage = Stage.JUDGING
     live.judging(answers)
-    try:
-        judged = judge(recorded, hosted.judge_key, cfg, judged=live.one_judged)
-    except Exception as exc:  # noqa: BLE001 - re-raised: named when it is the provider's side
-        failure = judge_failure(exc, hosted.judge) if hosted.judge else None
-        if failure is None:
-            raise
-        raise failure from exc
+    grading = pool.grading
+    judged = apply_verdicts(recorded, pool.finish(), judge=grading.identity,
+                            judge_samples=grading.samples,
+                            judge_prompt_version=grading.prompt_version)
     write_outputs(folder, judged)
     return judged
 

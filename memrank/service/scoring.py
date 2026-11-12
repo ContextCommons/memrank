@@ -31,10 +31,15 @@ one conversation are not independent draws (:func:`memrank.instrument.statistics
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
 
 from memrank.instrument.statistics import bootstrap_ci
 from memrank.service.protocol import Interval, JudgeIdentity, QuestionOutcome, RunResult
+
+if TYPE_CHECKING:
+    from memrank.service.live_rows import LiveRows
 
 NOT_JUDGED = ("NOT JUDGED: this run was created with judging off. It records answers, failures "
               "and latency; it has no quality score.")
@@ -52,11 +57,20 @@ def _interval(scored: list[tuple[str, str, float]]) -> Interval:
     return Interval(mean=mean, ci95=bootstrap_ci(pairs, groups), n=len(scored))
 
 
+def counts_toward_score(question: QuestionOutcome, *, judged: bool) -> bool:
+    """Whether ``question`` is in its run's score: judged, or failed (scoring 0), in a judged run.
+
+    The one inclusion rule, shared by the final score (:func:`summarize`) and the provisional
+    one (:func:`provisional`), so the two agree once every question is graded.
+    """
+    return judged and question.status in ("judged", "failed") and question.score is not None
+
+
 def summarize(result: RunResult) -> RunResult:
     """``result`` with its score, per-category scores and counts recomputed from its questions."""
     rows = [q for case in result.cases for q in case.questions]
     scored = [(q.case_id, q.question_id, q.score, q.category or "uncategorized") for q in rows
-              if result.judged and q.status in ("judged", "failed") and q.score is not None]
+              if q.score is not None and counts_toward_score(q, judged=result.judged)]
     by_category: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
     for case_id, qid, score, category in scored:
         by_category[category].append((case_id, qid, score))
@@ -104,3 +118,40 @@ def apply_verdicts(result: RunResult, verdicts: dict[str, dict[str, Any]], *,
     judged = result.model_copy(update={"cases": cases, "identity": identity, "judged": True,
                                        "notice": None})
     return summarize(judged)
+
+
+class Provisional(BaseModel):
+    """A run's score while it is still being graded: no interval, and how much it covers.
+
+    ``graded`` questions count toward ``mean`` under :func:`counts_toward_score`, of ``total``
+    in the plan; ``ungraded`` answers have no current verdict yet; ``failed`` questions score 0
+    and are among ``graded`` once the run has a judging.
+    """
+
+    graded: int
+    total: int
+    ungraded: int
+    failed: int
+    mean: float | None
+
+
+def provisional(rows: LiveRows, *, total: int) -> Provisional:
+    """The provisional score of a run's live rows (decision R4: computed on read, never stored).
+
+    Args:
+        rows: The run's answers, its live judging and that judging's verdicts.
+        total: How many questions the run's plan has, answered or not.
+    """
+    from memrank.service.live_rows import cases_of  # live_rows builds on this module's types
+
+    judged = rows.judging is not None
+    questions = [q for case in cases_of(rows) for q in case.questions]
+    scores = [q.score for q in questions
+              if q.score is not None and counts_toward_score(q, judged=judged)]
+    verdicts = {v.question_id for v in rows.verdicts}
+    return Provisional(
+        graded=len(scores), total=total,
+        ungraded=sum(1 for a in rows.answers
+                     if a.status == "answered" and a.question_id not in verdicts),
+        failed=sum(1 for a in rows.answers if a.status == "failed"),
+        mean=sum(scores) / len(scores) if scores else None)

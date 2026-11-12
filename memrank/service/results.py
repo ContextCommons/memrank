@@ -25,10 +25,12 @@ from collections import defaultdict
 from typing import Any
 
 from memrank import __version__
+from memrank.definitions import resolve
 from memrank.service.cases import Case, Plan
 from memrank.service.machine import Recorded, RunState
 from memrank.service.protocol import (
     CaseOutcome,
+    FinalQuestion,
     Identity,
     Interval,
     Op,
@@ -84,6 +86,50 @@ def _case(case: Case, state: RunState) -> CaseOutcome:
     status = "failed" if failed else ("pending" if pending else "complete")
     return CaseOutcome(case_id=case.id, status=status, error=failed,
                        restarts=state.restarts.get(case.id, 0), questions=questions)
+
+
+def final_questions(plan: Plan, state: RunState, step_id: str) -> list[FinalQuestion]:
+    """The questions the recorded step ``step_id`` made final, each built as the result
+    builds it (:func:`_question`), so a live answer and the sealed one cannot disagree.
+
+    An answer makes its own question final; a failed reset or feed makes final every question
+    of its case not yet asked. Any other step makes none final.
+    """
+    recorded = state.recorded[step_id]
+    case = plan.case(recorded.case_id)
+    first = _first_position(plan, case.id)
+    if recorded.op is Op.ASK:
+        assert recorded.question_index is not None  # every ask names its question
+        index = recorded.question_index
+        return [FinalQuestion(position=first + index,
+                              outcome=_question(case, index, recorded, None))]
+    failed = state.failed_cases.get(case.id)
+    if recorded.result.error is None or failed is None:
+        return []
+    asked = _asks(state)
+    return [FinalQuestion(position=first + i, outcome=_question(case, i, None, failed))
+            for i in range(len(case.queries)) if (case.id, i) not in asked]
+
+
+def _first_position(plan: Plan, case_id: str) -> int:
+    """Where ``case_id``'s first question stands in the plan's order, across every case."""
+    before = 0
+    for case in plan.cases:
+        if case.id == case_id:
+            return before
+        before += len(case.queries)
+    raise KeyError(case_id)
+
+
+def uses_model(plan: Plan) -> bool:
+    """Whether any question ``plan`` asks is graded by the judge model.
+
+    Decided from the plan, before any answer exists, because a live run names its judging when
+    its grading starts rather than after the last answer.
+    """
+    definition = resolve(plan.source or plan.evaluation)
+    return any(definition.grader_for(_outcome(case, query)).uses_model
+               for case in plan.cases for query in case.queries)
 
 
 def _percentile(values: list[float], fraction: float) -> float | None:

@@ -650,7 +650,7 @@ def test_every_flat_alias_has_its_runs_twin_and_no_others_exist():
     twins = {c.name for c in runs_app.registered_commands}
 
     # The flat surface is the aliases plus the commands that are nobody's alias: `run` and
-    # `serve` (evaluating an agent, decision 0034), `submit`, and `version`. `preflight` used to
+    # `serve` (evaluating an agent, decision 0034), the internal `task-exec`, and `version`. `preflight` used to
     # sit here; it retired into `targets show` when `doctor` was dropped from the model.
-    assert flat - {"run", "serve", "submit", "version"} == set(FLAT_ALIASES)
+    assert flat - {"run", "serve", "task-exec", "version"} == set(FLAT_ALIASES)
     assert set(FLAT_ALIASES.values()) <= twins

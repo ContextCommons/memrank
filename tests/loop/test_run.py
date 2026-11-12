@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import itertools
 import json
-from dataclasses import replace
 from html.parser import HTMLParser
 
 import click
@@ -16,9 +15,7 @@ from memrank.connect.http import HttpConnector, HttpSpec
 from memrank.connect.presets import preset_mapping
 from memrank.connect.probe import leak_probe
 from memrank.connect.spec import AgentSpec
-from memrank.judging.judge import JudgeConfig
 from memrank.judging.providers import ADAPTERS
-from memrank.loop import judge as loop_judge
 from memrank.loop import run as loop_run
 from memrank.loop.client import ServiceClient
 from memrank.loop.judge import DEFAULT_JUDGE
@@ -35,9 +32,9 @@ from memrank.loop.run import (
 from memrank.loop.upload import Hosted
 from memrank.placement.run_api_client import RunApiError
 from memrank.reference.full_context import create_app as agent_app
-from memrank.service.protocol import AgentRef, Op, Question, RunResult, Step
+from memrank.service.protocol import AgentRef, Op, Question, Step
 from tests.asgi_transport import asgi_transport
-from tests.loop.conftest import OrgApi
+from tests.loop.conftest import OrgApi, record_keys
 from tests.service.conftest import FakeJudge
 
 LOCOMO = RunOptions(evaluation="locomo")
@@ -54,20 +51,14 @@ class Org(OrgApi):
 
     def __init__(self) -> None:
         super().__init__()
-        self.keys: list[str] = []
-
-    def judge(self, result: RunResult, api_key: str, cfg: JudgeConfig,
-              judged=lambda: None) -> RunResult:
-        self.keys.append(api_key)
-        return loop_judge.judge(result, api_key, replace(cfg, cache=False) if cfg else None,
-                                judged=judged)
+        self.keys: list[str | None] = []
 
 
 @pytest.fixture(autouse=True)
 def org(monkeypatch) -> Org:
     """Judging with a fake judge that passes answers saying "blue", and a fake runs API."""
     fake = Org()
-    monkeypatch.setattr(loop_run, "judge", fake.judge)
+    record_keys(monkeypatch, fake.keys)
     monkeypatch.setitem(ADAPTERS, "anthropic", anthropic_answering(FakeJudge()))
     return fake
 
@@ -259,13 +250,14 @@ def test_a_resume_sends_the_saved_run_without_judging_it_again(engine, tmp_path,
     assert again.result == first.result
 
 
-def test_a_judged_run_without_the_orgs_key_is_refused_and_keeps_the_answers(engine, tmp_path,
+def test_a_judged_run_without_the_orgs_key_is_refused_before_its_first_step(engine, tmp_path,
                                                                             org, hosted):
+    """Each answer is judged as it lands, so the key the plan's graders need is checked first."""
     keyless = org.hosted(judge_key=None)
     with pytest.raises(JudgeKeyMissing, match="memrank secrets set ANTHROPIC_API_KEY --org acme"):
         run_agent(engine, full_context(), LOCOMO, tmp_path, keyless, quiet([]))
-    saved = json.loads(next(tmp_path.glob("*/result.json")).read_text())
-    assert saved["judged"] is False and org.uploads == []
+    assert not list(tmp_path.glob("*/result.json")) and org.uploads == []
+    assert org.states == ["running", "stopped"]
 
 
 def test_a_run_without_judging_is_uploaded_unscored(engine, tmp_path, org):

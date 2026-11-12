@@ -1,0 +1,178 @@
+{
+  "cases": [
+    {
+      "case_id": "c1",
+      "status": "complete",
+      "error": null,
+      "restarts": 1,
+      "questions": [
+        {
+          "case_id": "c1",
+          "question_id": "c1_q0",
+          "question": "What colour is Ann's car?",
+          "reference": [
+            "blue"
+          ],
+          "category": "single-hop",
+          "grading": {
+            "gold_answers": [
+              "blue"
+            ],
+            "kind": "qa"
+          },
+          "status": "judged",
+          "answer": "a blue car",
+          "error": null,
+          "elapsed_ms": 140.0,
+          "retrieval_ms": 9.5,
+          "score": 1.0,
+          "passed": true,
+          "rationale": "matches",
+          "probability": null,
+          "decision": null
+        },
+        {
+          "case_id": "c1",
+          "question_id": "c1_q1",
+          "question": "When did Ann buy it?",
+          "reference": [
+            "May 2023"
+          ],
+          "category": "temporal",
+          "grading": {
+            "gold_answers": [
+              "May 2023"
+            ],
+            "kind": "qa"
+          },
+          "status": "judged",
+          "answer": "June",
+          "error": null,
+          "elapsed_ms": 110.0,
+          "retrieval_ms": null,
+          "score": 0.0,
+          "passed": false,
+          "rationale": "differs",
+          "probability": null,
+          "decision": null
+        }
+      ]
+    },
+    {
+      "case_id": "c2",
+      "status": "failed",
+      "error": "feed failed: HTTP 500 from the agent",
+      "restarts": 0,
+      "questions": [
+        {
+          "case_id": "c2",
+          "question_id": "c2_q0",
+          "question": "Where does Bo live?",
+          "reference": [
+            "Lima"
+          ],
+          "category": "single-hop",
+          "grading": {
+            "gold_answers": [
+              "Lima"
+            ],
+            "kind": "qa"
+          },
+          "status": "failed",
+          "answer": null,
+          "error": "feed failed: HTTP 500 from the agent",
+          "elapsed_ms": null,
+          "retrieval_ms": null,
+          "score": 0.0,
+          "passed": null,
+          "rationale": null,
+          "probability": null,
+          "decision": null
+        },
+        {
+          "case_id": "c2",
+          "question_id": "c2_q1",
+          "question": "What is Bo's dog called?",
+          "reference": [
+            "Rex"
+          ],
+          "category": "multi-hop",
+          "grading": {
+            "gold_answers": [
+              "Rex"
+            ],
+            "kind": "qa"
+          },
+          "status": "failed",
+          "answer": null,
+          "error": "feed failed: HTTP 500 from the agent",
+          "elapsed_ms": null,
+          "retrieval_ms": null,
+          "score": 0.0,
+          "passed": null,
+          "rationale": null,
+          "probability": null,
+          "decision": null
+        }
+      ]
+    },
+    {
+      "case_id": "c3",
+      "status": "complete",
+      "error": null,
+      "restarts": 1,
+      "questions": [
+        {
+          "case_id": "c3",
+          "question_id": "c3_q0",
+          "question": "Which city did Cy visit?",
+          "reference": [
+            "Paris"
+          ],
+          "category": "single-hop",
+          "grading": {
+            "gold_answers": [
+              "Paris"
+            ],
+            "kind": "qa"
+          },
+          "status": "unjudged",
+          "answer": "Paris, France",
+          "error": "judge call failed: HTTP 529 overloaded",
+          "elapsed_ms": 95.0,
+          "retrieval_ms": null,
+          "score": null,
+          "passed": null,
+          "rationale": null,
+          "probability": null,
+          "decision": null
+        },
+        {
+          "case_id": "c3",
+          "question_id": "c3_q1",
+          "question": "Which day was the trip?",
+          "reference": [
+            "Tuesday"
+          ],
+          "category": "temporal",
+          "grading": {
+            "gold_answers": [
+              "Tuesday"
+            ],
+            "kind": "qa"
+          },
+          "status": "judged",
+          "answer": "Tuesday",
+          "error": null,
+          "elapsed_ms": 100.0,
+          "retrieval_ms": null,
+          "score": 1.0,
+          "passed": true,
+          "rationale": "matches",
+          "probability": null,
+          "decision": null
+        }
+      ]
+    }
+  ]
+}

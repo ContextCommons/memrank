@@ -97,7 +97,7 @@ def test_require_passes_when_everything_is_met():
 
 # --- and the run refuses before it exists -------------------------------------------------------- #
 
-def test_submit_on_local_refuses_before_minting_a_run(monkeypatch, tmp_path, capsys):
+def test_local_placement_refuses_before_minting_a_run(monkeypatch, tmp_path, capsys):
     """The whole point: a refusal at the terminal, not a run record marked failed.
 
     Driven through ``runner.main`` rather than ``CliRunner.invoke``, because the error boundary
@@ -107,8 +107,9 @@ def test_submit_on_local_refuses_before_minting_a_run(monkeypatch, tmp_path, cap
     monkeypatch.setenv("MEMRANK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("MEMRANK_CONFIG_DIR", str(tmp_path / "cfg"))
     _docker(monkeypatch, missing=True)
-    monkeypatch.setattr("sys.argv", ["memrank", "submit", "word-overlap", "demo",
-                                     "--on", "local", "--output-dir", str(tmp_path / "out")])
+    monkeypatch.setattr("sys.argv", ["memrank", "task-exec", "word-overlap", "demo",
+                                     "--on", "local", "--output-dir", str(tmp_path / "out"),
+                                     "--run-id", "l1"])
 
     with pytest.raises(SystemExit) as exited:
         runner_mod.main()
@@ -128,7 +129,7 @@ def test_a_placement_that_needs_nothing_is_not_gated(monkeypatch, tmp_path):
     _docker(monkeypatch, missing=True)
 
     result = runner.invoke(runner_mod.app,
-                           ["submit", "word-overlap", "demo", "--on", "none",
+                           ["task-exec", "word-overlap", "demo", "--on", "none",
                             "--run-id", "in-process", "--output-dir", str(tmp_path / "out")])
 
     assert result.exit_code == 0, result.output
