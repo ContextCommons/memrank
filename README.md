@@ -59,7 +59,7 @@ history on memrank.ai, where every question, answer and verdict can be read.
 - [LongMemEval](https://memrank.ai/docs/benchmarks/longmemeval): five hundred questions, each with
   its own haystack of dated chat sessions.
 - [BEAM](https://memrank.ai/docs/benchmarks/beam): very long conversations from one user, at 100K,
-  500K and 1M tokens, testing ten memory abilities.
+  500K, 1M and 10M tokens, testing ten memory abilities.
 - [Your own cases](https://memrank.ai/docs/benchmarks/your-own-cases): an evaluation file with the
   conversations, questions and reference answers that matter to you, graded by exact match,
   choice, number, the judge, a rubric, or your own program.

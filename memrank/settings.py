@@ -63,7 +63,7 @@ class Setting:
 #: would be a preference that silently never applies.
 SETTINGS: tuple[Setting, ...] = (
     Setting("defaults.org", "MEMRANK_ORG", None,
-            "org a submission runs under (and is recorded against)"),
+            "org a run uploads to (and is recorded against)"),
     # Defaulted, unlike the others, because an installed CLI has no env file: without it the
     # first command a new user runs fails on an environment variable they have never heard of.
     # This is not the no-fallbacks rule bending -- that rule stops a MISSING setting being

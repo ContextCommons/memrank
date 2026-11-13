@@ -14,8 +14,10 @@
 """BEAM benchmark (Mohammadta/BEAM).
 
 100 conversations of 100K-10M tokens, 2000 probing questions across 10
-memory ability categories. Memrank v0.1 supports the 100K, 500K, and 1M
-tiers; 10M is reserved for v0.2 (memory + bandwidth requirements).
+memory ability categories. Memrank supports all four tiers: 100k, 500k and 1m
+from `Mohammadta/BEAM`, and 10m from the separate `Mohammadta/BEAM-10M` dataset,
+whose deeper chat shape `memrank.benchmarks.beam_10m` maps onto the others'.
+Every tier is loaded, ingested, judged and context-capped the same way.
 
 BEAM scores against a ``rubric`` of atomic nuggets -- one judge call each, scored
 {0, 0.5, 1} and averaged within the question. ``judge_shape()`` returns that grader,
@@ -49,23 +51,28 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from memrank.benchmarks import beam_10m
 from memrank.benchmarks.answer_prompts import BEAM_READER
 from memrank.core import AdapterResponse, Benchmark, BenchmarkUnit, Document, EvalInfo
 from memrank.judging.shape import BeamJudgeShape, JudgeShape
 
 _HF_DATASET = "Mohammadta/BEAM"
 
-# HuggingFace exposes BEAM as one dataset with three named splits. The 10M bucket is NOT a
-# fourth split of this dataset -- it lives in a separate repo (`Mohammadta/BEAM-10M`), so
-# adding it is a new source, not a new key here.
+# Tier -> (HuggingFace dataset, split). Three tiers are named splits of one dataset; the 10M
+# bucket is NOT a fourth split of it -- it lives in a separate repo with its own chat shape
+# (`beam_10m`), and is cached per conversation rather than as one file.
 #
 # The paper and the repo call the smallest bucket 128K; the split is named 100K and every
 # third-party writeup follows the split. Same 20 conversations either way.
 _HF_SPLIT_MAP = {
-    "100k": "100K",
-    "500k": "500K",
-    "1m": "1M",
+    "100k": (_HF_DATASET, "100K"),
+    "500k": (_HF_DATASET, "500K"),
+    "1m": (_HF_DATASET, "1M"),
+    "10m": (beam_10m.HF_DATASET, beam_10m.HF_SPLIT),
 }
+
+#: Head-of-tier conversation counts per slice (audit F8: truncation, not a sample).
+_SLICE_LIMITS = {"smoke": 1, "mini": 5}
 
 #: The one ability BEAM builds to be unanswerable. Its probes carry `why_unanswerable` and no
 #: `source_chat_ids` at all, so a correct response withholds rather than answers -- which makes it
@@ -119,9 +126,10 @@ class BEAMBenchmark(Benchmark):
     #: coverage.
     info = EvalInfo(unit="conversation",
                     units_declared="20 conversations / 400 questions at 100k; 35 / 700 at 500k "
-                                   "and 1m; 20 questions per conversation, 2 per ability",
+                                   "and 1m; 10 / 200 at 10m; 20 questions per conversation, "
+                                   "2 per ability",
                     slices=("smoke", "mini"),
-                    tiers=("100k", "500k", "1m"))
+                    tiers=("100k", "500k", "1m", "10m"))
     # BEAM gold answers are ideal_response prose, not verbatim spans, so the substring-recall
     # proxy was structurally ~0 (even for the word-overlap arm). It is no longer computed at
     # all -- see `score()`. BEAM quality is measured by the rubric judge (`--judge`).
@@ -146,6 +154,8 @@ class BEAMBenchmark(Benchmark):
         if tier not in _HF_SPLIT_MAP:
             raise ValueError(f"BEAM tier must be one of {list(_HF_SPLIT_MAP)}, got {tier!r}")
         self.tier = tier
+        # Per instance: 10m is a different dataset, and a receipt must name the one it read.
+        self.dataset_version = f"{_HF_SPLIT_MAP[tier][0]}@v1"
         self.slice = slice
         self.k = k
         env = os.environ.get("BEAM_DATA_PATH")
@@ -165,9 +175,17 @@ class BEAMBenchmark(Benchmark):
         return cache / f"{self.tier}.json"
 
     def _load_raw(self) -> list[dict[str, Any]]:
+        """The tier's rows, cut to the slice -- before reading, where the cache allows it."""
+        limit = _SLICE_LIMITS.get(self.slice or "")
         if self._local_path and self._local_path.exists():
             with open(self._local_path, encoding="utf-8") as f:
-                return json.load(f)
+                return json.load(f)[:limit]
+        if self.tier == "10m":
+            # Per-conversation cache: a slice reads only its own conversations (~49M chars each).
+            return beam_10m.load_rows(self._cache_path().with_suffix(""), limit)
+        return self._load_cached_split()[:limit]
+
+    def _load_cached_split(self) -> list[dict[str, Any]]:
         path = self._cache_path()
         if not path.exists():
             from memrank.benchmarks import dataset_download_notice
@@ -186,8 +204,8 @@ class BEAMBenchmark(Benchmark):
         from memrank.errors import optional_import
 
         load_dataset = optional_import("datasets", "benchmarks").load_dataset
-        hf_split = _HF_SPLIT_MAP[self.tier]
-        ds = load_dataset(_HF_DATASET, split=hf_split)
+        dataset, hf_split = _HF_SPLIT_MAP[self.tier]
+        ds = load_dataset(dataset, split=hf_split)
         rows = [dict(row) for row in ds]
         with open(dest, "w", encoding="utf-8") as f:
             json.dump(rows, f)
@@ -389,10 +407,6 @@ class BEAMBenchmark(Benchmark):
     def load(self) -> list[BenchmarkUnit]:
         """Return one BenchmarkUnit per conversation in the chosen tier."""
         raw = self._load_raw()
-        if self.slice == "smoke":
-            raw = raw[:1]
-        elif self.slice == "mini":
-            raw = raw[:5]
         units: list[BenchmarkUnit] = []
         for item in raw:
             conv_id = str(item.get("conversation_id") or f"conv_{len(units)}")
@@ -401,7 +415,10 @@ class BEAMBenchmark(Benchmark):
             # are given `chat` only), and it would hand every engine a free answer sheet for the
             # information-extraction probes. Same protocol rule as the anchors: engines get the
             # conversation, nothing about it.
-            documents = self._conv_documents(conv_id, item.get("chat") or [])
+            chat = item.get("chat") or []
+            if self.tier == "10m":
+                chat = beam_10m.sessions_of(chat)
+            documents = self._conv_documents(conv_id, chat)
             queries = self._conv_queries(conv_id, item)
             units.append(
                 BenchmarkUnit(

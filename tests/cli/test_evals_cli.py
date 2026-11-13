@@ -42,7 +42,8 @@ def test_evals_ls_lists_every_runnable_variant():
     assert result.exit_code == 0
     listed = {line.strip() for line in result.stdout.splitlines() if line.strip()}
     assert listed == set(shipped_refs())
-    assert {"locomo", "locomo:smoke", "beam:100k", "beam:1m-mini"}.issubset(listed)
+    assert {"locomo", "locomo:smoke", "beam:100k", "beam:1m-mini",
+            "beam:10m", "beam:10m-smoke"}.issubset(listed)
     assert not {"demo", "relation_graph"} & listed, "evaluations an agent cannot be put to"
     assert "beam" not in listed, "a tiered benchmark has no unqualified evaluation"
 
@@ -57,7 +58,7 @@ def test_evals_show_renders_declared_catalog_fields():
 def test_evals_show_beam_declares_tiers_and_judge_requirement():
     result = runner.invoke(app, ["evals", "show", "beam"])
     assert result.exit_code == 0
-    for tier in ("100k", "500k", "1m"):
+    for tier in ("100k", "500k", "1m", "10m"):
         assert tier in result.stdout
     # Labels are dimmed rather than colon-suffixed now -- the claim is that the field is there.
     assert "judge" in result.stdout and "required" in result.stdout

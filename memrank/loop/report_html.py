@@ -22,7 +22,18 @@ from __future__ import annotations
 
 from html import escape
 
-from memrank.loop.readout import duration, retrieval
+from memrank.loop.readout import (
+    ANSWER_TIME,
+    INGESTION_TIME,
+    RETRIEVAL_SCOPE,
+    RETRIEVAL_TIME,
+    TOTAL_RUNTIME,
+    TOTAL_RUNTIME_SCOPE,
+    duration,
+    reported_by,
+    runtime_words,
+    timings,
+)
 from memrank.service.protocol import Interval, QuestionOutcome, RunResult
 
 _STYLE = """
@@ -39,6 +50,9 @@ th{background:#f4f4f4}.num{text-align:right;white-space:nowrap}
 .muted{color:#a8a8a8}th,td{border-color:#333}.warn{background:#3b1512}}
 """
 
+#: Explained on every run: the total is shown even when it was not recorded.
+_RUNTIME_METRIC = (TOTAL_RUNTIME, f"How long the evaluation took, {TOTAL_RUNTIME_SCOPE}.")
+
 _METRICS = (
     ("Score", "The share of questions the judge marked correct (BEAM: the mean share of rubric "
               "points met). A question the agent failed on counts as wrong."),
@@ -47,14 +61,20 @@ _METRICS = (
                      "conversation are not independent. A wide interval means few cases."),
     ("Failure rate", "The share of questions with no answer because the agent errored, or its "
                      "history could not be loaded. Failures are the agent's, not the judge's."),
-    ("Latency", "Time the agent took per call, measured by memrank around each request. "
-                "p50 is the typical call; p95 is a slow one."),
+    (INGESTION_TIME, "How long the agent took to take in one conversation's history, measured "
+                     "by memrank from sending the history until the agent's response came back."),
+    (ANSWER_TIME, "How long the agent took to answer one question, measured by memrank from "
+                  "sending the question until the answer came back: retrieval, generation and "
+                  "network all included."),
+    ("Median and slow", "The median is the middle figure: half took less, half took more. "
+                        "The slow figure (1 in 20) is the 95th percentile: one in twenty took "
+                        "longer."),
 )
 
 #: Explained only on a run whose agent reported its retrieval time.
-_RETRIEVAL_METRIC = ("Retrieval time", "Time the agent says its memory retrieval took per "
-                     "answer, as it reported it. memrank does not measure it and cannot check "
-                     "it; it is part of the answer time memrank measures, not added to it.")
+_RETRIEVAL_METRIC = (RETRIEVAL_TIME, "How long the agent says its memory retrieval took per "
+                     "question, as it reported it. memrank does not measure it and cannot check "
+                     f"it; it is {RETRIEVAL_SCOPE}.")
 
 
 def _pct(value: float | None) -> str:
@@ -98,23 +118,26 @@ def _categories(result: RunResult) -> str:
 
 
 def _reliability(result: RunResult) -> str:
-    latency = result.latency_ms
-    return (f"<h2>Failures and speed</h2><p>{result.failed} of {result.questions} questions "
-            f"failed ({_pct(result.failure_rate)}). Answering took {_seconds(latency.get('ask_p50'))}"
-            f" typically and {_seconds(latency.get('ask_p95'))} when slow; loading a case's "
-            f"history took {_seconds(latency.get('feed_p50'))} typically.{_retrieval(result)}</p>")
+    return (f"<h2>Failures</h2><p>{result.failed} of {result.questions} questions "
+            f"failed ({_pct(result.failure_rate)}).</p>{_speed(result)}")
 
 
-def _retrieval(result: RunResult) -> str:
-    """The agent's reported retrieval time as one more sentence; nothing when it reported none."""
-    if result.retrieval is None:
-        return ""
-    words = retrieval(result.retrieval)
-    return f" {escape(words[0].upper() + words[1:])}."
+def _speed(result: RunResult) -> str:
+    """The total runtime, or why it was not recorded, then each timing, named as the readout names it."""
+    rows = [(TOTAL_RUNTIME, runtime_words(result))]
+    for timing in timings(result):
+        words = timing.words()
+        if timing.name == RETRIEVAL_TIME and result.retrieval is not None:
+            words += f"; {reported_by(result.retrieval)}, {RETRIEVAL_SCOPE}"
+        rows.append((timing.name, words))
+    body = "".join(f"<tr><th>{escape(name)}</th><td>{escape(words)}</td></tr>"
+                   for name, words in rows)
+    return f"<h2>Speed</h2><table id=speed>{body}</table>"
 
 
 def _explained(result: RunResult) -> str:
-    metrics = _METRICS if result.retrieval is None else (*_METRICS, _RETRIEVAL_METRIC)
+    metrics = (_RUNTIME_METRIC, *_METRICS,
+               *((_RETRIEVAL_METRIC,) if result.retrieval is not None else ()))
     rows = "".join(f"<tr><th>{name}</th><td>{text}</td></tr>" for name, text in metrics)
     return f"<h2>What these numbers mean</h2><table>{rows}</table>"
 

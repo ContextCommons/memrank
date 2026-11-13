@@ -310,14 +310,14 @@ def _print_version(requested: bool) -> None:
 @app.callback(help=_APP_HELP)
 def _root(
     version: bool = typer.Option(  # noqa: ARG001 - read by its eager callback, not the body
-        False, "--version", "-V", callback=_print_version, is_eager=True,
+        False, "--version", "-v", "-V", callback=_print_version, is_eager=True,
         help="Show the version and where this build came from, then exit."),
 ) -> None:
     """The root of the CLI, carrying only what applies to every command.
 
-    ``-V`` rather than ``-v``: ``-v`` is verbose by convention everywhere else, and spending
-    it on version would put the two in permanent conflict the first time a global verbosity
-    flag is wanted.
+    ``-v`` because it is the version flag people try first, and a failing ``memrank -v`` reads
+    as a broken install (ATO-2696); ``-V`` stays for anyone already typing it. A root option
+    is only parsed before the command, so a subcommand's own ``-v`` (``--verbose``) is untouched.
     """
     # Library modules narrate through `logging` (dataset downloads, survivable adapter
     # warnings); the terminal is the CLI's concern, so the CLI is what gives them a voice.

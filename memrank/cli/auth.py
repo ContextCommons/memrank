@@ -219,7 +219,7 @@ def status() -> None:
     detail.emit(detail.panel("signed in", fields))
     default_org = settings.get("defaults.org")
     if body["orgs"]:
-        # The default is a MARKED ROW rather than a suffix: which org a submission runs under is
+        # The default is a MARKED ROW rather than a suffix: which org a run uploads to is
         # the question this listing is asked, and a parenthetical at the end of one line is the
         # easiest thing on the screen to miss.
         table.emit((table.Column("", width=1),

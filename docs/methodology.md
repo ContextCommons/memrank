@@ -252,8 +252,21 @@ it apart from `latency_ms` (as `retrieval`: p50 and p95 by nearest rank over the
 reported it, with how many did out of how many answers), and never ranks or judges on it. It is
 part of the answer time, not added to it. An answer that reports nothing is left out rather than
 counted as zero, and a reported value that is not a non-negative number fails that answer. Every
-surface that shows it says it was reported by the agent, and for how many questions; a run whose
-agent reports nothing shows nothing extra.
+surface that shows it says it was reported by the agent, and for how many questions when not
+every answer carried it; a run whose agent reports nothing shows nothing extra.
+
+**Names and total runtime.** Every surface -- the terminal, `report.html` and the run page --
+names a finished `memrank run`'s timings alike and in the same order. First comes the *total
+evaluation runtime* (`runtime_ms`): how long the run was going, from its start until its last
+answer was graded, judging included. Then *ingestion time per conversation* (the `feed` call, one
+conversation's history), *answer time per question* (the `ask` call) and, only when the agent
+reported it, *retrieval time per question*, each as a median with a slow figure (1 in 20, the
+95th percentile) beside it. A run that was stopped and resumed counts only the time it was going:
+each session records how long it ran in `sessions.jsonl` in the run folder, by the runner's own
+clock, and the total is their sum. It is exact or not recorded, never estimated -- a run made
+with memrank 0.6.0 or earlier, resumed on a machine without its earlier sessions, or with a
+session that never recorded its end still shows the total first, as *Not recorded* with that
+reason.
 
 ## Tokens
 
