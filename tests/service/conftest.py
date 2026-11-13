@@ -66,8 +66,12 @@ def create(client: TestClient) -> str:
 
 
 def step(client: TestClient, run_id: str) -> dict:
-    response = client.post(f"/v1/runs/{run_id}/next")
-    assert response.status_code == 200, response.text
+    """The next step of a one-at-a-time runner: a question if any, else a reset or feed."""
+    for pool in ("answer", "ingest"):
+        response = client.post(f"/v1/runs/{run_id}/next?pool={pool}")
+        assert response.status_code == 200, response.text
+        if response.json()["op"] != "done":
+            break
     return response.json()
 
 

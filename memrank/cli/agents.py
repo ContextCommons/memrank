@@ -15,6 +15,7 @@
 
     memrank run locomo --agent full-context --cases 5 --questions 4
     memrank run locomo --agent ./my-agent.yaml --concurrency 4
+    memrank run locomo --agent ./my-agent.yaml --answer-concurrency 16 --questions-in-order
     memrank run locomo --agent ./my-agent.yaml --no-judge
     memrank run ./my-eval.yaml --agent ./my-agent.yaml
     memrank agents ls
@@ -39,9 +40,12 @@ from memrank import config, errors
 from memrank.errors import ActionRequired, Concluded, MemrankError, optional_import
 from memrank.judging.judge import JudgeConfig
 from memrank.loop.judge import DEFAULT_JUDGE
-from memrank.loop.lanes import DEFAULT_CONCURRENCY
+from memrank.loop.stages import DEFAULT_CONCURRENCY, Ceilings
 from memrank.outcome import Step
 from memrank.term import style
+
+#: What each stage's ceiling is when its own option is not given, as the help shows it.
+_EACH_DEFAULT = f"{DEFAULT_CONCURRENCY}, or --concurrency"
 
 DEFAULT_SERVICE_PORT = 8787
 DEFAULT_AGENT_PORT = 8765
@@ -61,8 +65,9 @@ def run(
     agent: str = typer.Option(..., "--agent", "-a",
                               help="A shipped agent's name (`memrank agents ls`) or the path "
                                    "to your agent file"),
-    cases: int | None = typer.Option(None, "--cases", min=1, help="Sample this many cases"),
-    questions: int | None = typer.Option(None, "--questions", min=1,
+    cases: int | None = typer.Option(None, "--cases", min=1, metavar="N",
+                                     help="Sample this many cases"),
+    questions: int | None = typer.Option(None, "--questions", min=1, metavar="N",
                                          help="Sample at most this many questions per case"),
     seed: int = typer.Option(0, "--seed", help="Seed for case and question sampling"),
     judge: str = typer.Option(DEFAULT_JUDGE, "--judge", metavar="SPEC",
@@ -73,9 +78,26 @@ def run(
                                    "uses your organisation's saved key for it"),
     no_judge: bool = typer.Option(False, "--no-judge",
                                   help="Record the answers and report NO quality score"),
-    concurrency: int = typer.Option(DEFAULT_CONCURRENCY, "--concurrency", "-j", min=1,
-                                    help="Run this many cases at once; each case's steps "
-                                         "stay in order. 1 runs them one at a time"),
+    concurrency: int | None = typer.Option(
+        None, "--concurrency", "-j", min=1, metavar="N",
+        help="At most this many feeds, answers and judge calls at once, each; an option for "
+             "one of them overrides it for that one"),
+    ingest_concurrency: int | None = typer.Option(
+        None, "--ingest-concurrency", min=1, metavar="N", show_default=_EACH_DEFAULT,
+        help="At most this many conversations being fed to the agent at once"),
+    answer_concurrency: int | None = typer.Option(
+        None, "--answer-concurrency", min=1, metavar="N", show_default=_EACH_DEFAULT,
+        help="At most this many questions being answered at once, across conversations. A "
+             "conversation's questions are asked only after its feed succeeded"),
+    judge_concurrency: int | None = typer.Option(
+        None, "--judge-concurrency", min=1, metavar="N", show_default=_EACH_DEFAULT,
+        help="At most this many judge calls at once. Each answer being graded holds one; a "
+             "BEAM answer's rubric criteria are judged one after another. Scores do not "
+             "depend on it"),
+    questions_in_order: bool = typer.Option(
+        False, "--questions-in-order",
+        help="At most one question of each conversation at once, in order: for an agent that "
+             "stores what it is asked, whose answers would otherwise depend on timing"),
     resume: str | None = typer.Option(None, "--resume",
                                       help="Continue a run by its id. A failed case or "
                                            "answer stays failed unless --retry-failed"),
@@ -104,10 +126,16 @@ def run(
     if retry_failed and resume is None:
         raise typer.BadParameter("--retry-failed retries the failed cases of a run you "
                                  "--resume; a new run has none")
+    if no_judge and judge_concurrency is not None:
+        raise typer.BadParameter("--judge-concurrency sets how many judge calls run at once, "
+                                 "and --no-judge makes none; drop one of them")
     _check_spec(judge, "--judge")
+    ceilings = Ceilings.resolve(concurrency, ingest=ingest_concurrency,
+                                answer=answer_concurrency, judge=judge_concurrency,
+                                questions_in_order=questions_in_order)
     options = RunOptions(evaluation=_evaluation_ref(benchmark), cases=cases, questions=questions,
                          seed=seed, resume=resume, retry_failed=retry_failed,
-                         judge=None if no_judge else judge, concurrency=concurrency)
+                         judge=None if no_judge else judge, ceilings=ceilings)
     trace = RunTrace()
     call = Invocation(command=_command(ctx), resume=lambda run_id: _resume_command(ctx, run_id))
     try:
@@ -232,11 +260,13 @@ def _command(ctx: typer.Context) -> str:
 
 def _no_judge_rerun(ctx: typer.Context) -> str:
     """The user's own ``memrank run`` arguments, with ``--no-judge`` in place of judging."""
-    return shlex.join([*_given(ctx, skip=("judge", "no_judge")), "--no-judge"])
+    return shlex.join([*_given(ctx, skip=("judge", "no_judge", "judge_concurrency")),
+                       "--no-judge"])
 
 
 #: What a resumed run is given again besides its id: the rest is saved with the run.
-_RESUME_KEEPS = ("agent", "output_dir", "service", "concurrency", "judge")
+_RESUME_KEEPS = ("agent", "output_dir", "service", "concurrency", "ingest_concurrency",
+                 "answer_concurrency", "judge_concurrency", "questions_in_order", "judge")
 
 
 def _resume_command(ctx: typer.Context, run_id: str) -> str:

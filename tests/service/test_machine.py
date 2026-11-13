@@ -1,7 +1,8 @@
 """The run's rules, one row per transition: every legal move, and each illegal neighbour.
 
-The first half drives one lane, which is the strictly sequential run. The second half scripts
-several lanes interleaving, each row a sequence of moves and what each lane was handed.
+Here a runner carries one step at a time, taking a question when one is offered and ingest
+work otherwise -- the strictly sequential run. ``test_machine_pools.py`` has the pools side by
+side.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import pytest
 
 from memrank.service import machine
 from memrank.service.machine import ProtocolViolation, RunState, UnknownStep
-from memrank.service.protocol import Op, StepResult
+from memrank.service.protocol import Op, Pool, StepResult
 
 OK = StepResult(ok=True, elapsed_ms=1)
 ANSWER = StepResult(answer="blue", elapsed_ms=1)
@@ -21,21 +22,35 @@ def fresh() -> RunState:
     return machine.new_state({"c1": 2, "c2": 1})
 
 
+def take(state: RunState) -> tuple[RunState, machine.Outstanding | None]:
+    """What a one-at-a-time runner is handed next: a question if any, else a reset or feed."""
+    state, out = machine.next_step(state, Pool.ANSWER)
+    if out is None:
+        state, out = machine.next_step(state, Pool.INGEST)
+    return state, out
+
+
 def drive(state: RunState, results: list[StepResult]) -> RunState:
-    """Take lane 0's next step and answer it with each result in turn."""
+    """Take the next step and answer it with each result in turn."""
     for result in results:
-        state, out = machine.next_step(state)
+        state, out = take(state)
         assert out is not None
         state, _ = machine.submit(state, out.step_id, result)
     return state
 
 
+def question(state: RunState, out: machine.Outstanding) -> int:
+    """The question ``out`` asks; for a reset or feed, the question its case asks next."""
+    return out.question_index if out.question_index is not None \
+        else state.cases[out.case].question_index
+
+
 def where(state: RunState) -> tuple[Op | None, str | None, int]:
-    """The op and case lane 0's next step would be, and that case's question index."""
-    state, out = machine.next_step(state)
+    """The op and case of the next step, and the question it asks or leads to."""
+    state, out = take(state)
     if out is None:
         return None, None, 0
-    return out.op, state.case_ids[out.case], state.cases[out.case].question_index
+    return out.op, state.case_ids[out.case], question(state, out)
 
 
 @pytest.mark.parametrize(("history", "expected"), [
@@ -63,20 +78,20 @@ def test_a_failed_reset_or_feed_fails_the_case():
     ([], ANSWER), ([OK], ANSWER), ([OK, OK], OK),
 ], ids=["answer-to-reset", "answer-to-feed", "ok-to-ask"])
 def test_a_result_of_the_wrong_kind_is_refused(history, result):
-    state, out = machine.next_step(drive(fresh(), history))
+    state, out = take(drive(fresh(), history))
     with pytest.raises(ProtocolViolation):
         machine.submit(state, out.step_id, result)
 
 
 def test_a_retried_identical_result_is_a_duplicate():
-    state, out = machine.next_step(fresh())
+    state, out = take(fresh())
     state, _ = machine.submit(state, out.step_id, OK)
     again, duplicate = machine.submit(state, out.step_id, OK)
     assert duplicate and again == state
 
 
 def test_a_step_cannot_be_answered_twice_with_different_content():
-    state, out = machine.next_step(drive(fresh(), [OK, OK]))
+    state, out = take(drive(fresh(), [OK, OK]))
     state, _ = machine.submit(state, out.step_id, ANSWER)
     with pytest.raises(ProtocolViolation, match="different content"):
         machine.submit(state, out.step_id, StepResult(answer="red", elapsed_ms=1))
@@ -84,41 +99,62 @@ def test_a_step_cannot_be_answered_twice_with_different_content():
 
 @pytest.mark.parametrize("step_id", ["s99", "x", "s"])
 def test_a_step_never_issued_is_unknown(step_id):
-    state, _ = machine.next_step(fresh())
+    state, _ = take(fresh())
     with pytest.raises(UnknownStep):
         machine.submit(state, step_id, OK)
 
 
-def test_a_lost_reset_is_reissued_unchanged():
-    state, first = machine.next_step(fresh())
-    state, second = machine.next_step(state)
-    assert second == first and state.restarts == {}
+# -- a runner that starts: what the one before it held is lost (rule 4) -----------------------
+
+def test_a_lost_reset_is_handed_out_again_under_the_same_session():
+    state, first = take(fresh())
+    before = machine.session_id("run0123456789ab", state, 0)
+    state, restarted = machine.begin(state)
+    state, second = take(state)
+    assert restarted == [] and state.restarts == {}
+    assert second.op is Op.RESET and second.case == 0 and second.step_id != first.step_id
+    assert machine.session_id("run0123456789ab", state, 0) == before
 
 
 @pytest.mark.parametrize("history", [[OK], [OK, OK], [OK, OK, ANSWER]],
                          ids=["lost-feed", "lost-ask", "lost-second-ask"])
 def test_a_lost_feed_or_ask_restarts_the_case_from_reset(history):
-    state, lost = machine.next_step(drive(fresh(), history))
-    asked_before = state.cases[0].question_index
-    state, again = machine.next_step(state)
-    assert again.op is Op.RESET and again.step_id != lost.step_id
+    state, lost = take(drive(fresh(), history))
+    asked_before = question(state, lost)
+    state, restarted = machine.begin(state)
+    state, again = take(state)
+    assert restarted == ["c1"] and again.op is Op.RESET and again.case == 0
     assert state.restarts == {"c1": 1}
-    state = drive(state, [OK, OK])
+    state, _ = machine.submit(state, again.step_id, OK)
+    state = drive(state, [OK])
     assert where(state) == (Op.ASK, "c1", asked_before)
 
 
-def test_the_lost_step_is_refused_after_the_restart():
-    state, lost = machine.next_step(drive(fresh(), [OK]))
-    state, _ = machine.next_step(state)
+def test_the_lost_step_is_refused_after_a_runner_begins():
+    state, lost = take(drive(fresh(), [OK]))
+    state, _ = machine.begin(state)
     with pytest.raises(ProtocolViolation, match="no longer outstanding"):
         machine.submit(state, lost.step_id, OK)
 
 
 def test_the_session_id_changes_with_each_attempt():
-    state, _ = machine.next_step(drive(fresh(), [OK]))
+    state, _ = take(drive(fresh(), [OK]))
     before = machine.session_id("run0123456789ab", state, 0)
-    state, _ = machine.next_step(state)
+    state, _ = machine.begin(state)
     assert machine.session_id("run0123456789ab", state, 0) != before
+
+
+@pytest.mark.parametrize("history", [[], [OK], [OK, OK, ANSWER, ANSWER, OK, OK, ANSWER]],
+                         ids=["nothing-started", "a-reset-acknowledged", "every-case-finished"])
+def test_a_runner_beginning_with_no_case_fed_and_unfinished_changes_nothing(history):
+    state = drive(fresh(), history)
+    assert machine.begin(state) == (state, [])
+
+
+def test_a_fed_unfinished_case_restarts_with_nothing_outstanding():
+    state, restarted = machine.begin(drive(fresh(), [OK, OK, ANSWER]))
+    assert restarted == ["c1"] and state.restarts == {"c1": 1}
+    assert where(state) == (Op.RESET, "c1", 1)  # fed again, then the question still owed
 
 
 #: (history, what reopening returns, where lane 0 goes next, restarts after)
@@ -186,8 +222,9 @@ def test_a_lost_ask_during_a_retry_restarts_at_the_same_question():
     state, _ = machine.reopen_failed(drive(machine.new_state({"c1": 3}),
                                            [OK, OK, ERROR, ANSWER, ERROR]))
     state = drive(state, [OK, OK, ANSWER])
-    state, lost = machine.next_step(state)  # the ask of question 2, then the runner crashes
-    assert lost.op is Op.ASK and state.cases[0].question_index == 2
+    state, lost = take(state)  # the ask of question 2, then the runner crashes
+    assert lost.op is Op.ASK and lost.question_index == 2
+    state, _ = machine.begin(state)
     assert where(state) == (Op.RESET, "c1", 2)
 
 
@@ -201,97 +238,3 @@ def test_without_reopening_a_failed_case_stays_finished():
 def test_a_result_carries_exactly_one_outcome(fields):
     with pytest.raises(ValueError):
         StepResult(elapsed_ms=1, **fields)
-
-
-# -- lanes: cases side by side ------------------------------------------------------------------
-
-def play(script: list[tuple], lanes: int, cases: dict[str, int] | None = None):
-    """Run ``script`` -- ("next", lane) or ("post", lane, result) -- over ``lanes`` lanes.
-
-    Returns every step handed out as ``(lane, op, case id, question index)``, ``None`` for a lane
-    told nothing is left for it, and the final state.
-    """
-    state = machine.new_state(cases or {"c1": 2, "c2": 1, "c3": 1})
-    held: dict[int, str] = {}
-    handed: list = []
-    for move in script:
-        if move[0] == "next":
-            state, out = machine.next_step(state, move[1], lanes)
-            handed.append(None if out is None else (
-                move[1], out.op, state.case_ids[out.case], state.cases[out.case].question_index))
-            if out is not None:
-                held[move[1]] = out.step_id
-        else:
-            state, _ = machine.submit(state, held[move[1]], move[2])
-    return handed, state
-
-
-def steps(lane: int, *results: StepResult) -> list[tuple]:
-    return [move for result in results for move in (("next", lane), ("post", lane, result))]
-
-
-R, F, A = Op.RESET, Op.FEED, Op.ASK
-
-#: (case, lanes, script, what was handed out, in order)
-INTERLEAVED = [
-    ("lanes-take-cases-in-order", 3, [("next", 0), ("next", 1), ("next", 2)],
-     [(0, R, "c1", 0), (1, R, "c2", 0), (2, R, "c3", 0)]),
-    ("each-case-keeps-its-own-order", 2,
-     [("next", 0), ("next", 1), ("post", 1, OK), ("post", 0, OK), ("next", 1), ("next", 0),
-      ("post", 0, OK), ("post", 1, OK), ("next", 0), ("next", 1)],
-     [(0, R, "c1", 0), (1, R, "c2", 0), (1, F, "c2", 0), (0, F, "c1", 0), (0, A, "c1", 0),
-      (1, A, "c2", 0)]),
-    ("a-finished-lane-takes-the-next-free-case", 2,
-     [("next", 0), *steps(1, OK, OK, ANSWER), ("next", 1)],
-     [(0, R, "c1", 0), (1, R, "c2", 0), (1, F, "c2", 0), (1, A, "c2", 0), (1, R, "c3", 0)]),
-    ("a-lane-with-nothing-left-is-told-so", 4,
-     [("next", 0), ("next", 1), ("next", 2), ("next", 3)],
-     [(0, R, "c1", 0), (1, R, "c2", 0), (2, R, "c3", 0), None]),
-    ("a-lost-step-restarts-only-that-lanes-case", 2,
-     [*steps(0, OK), ("next", 0), ("next", 1), ("next", 0)],
-     [(0, R, "c1", 0), (0, F, "c1", 0), (1, R, "c2", 0), (0, R, "c1", 0)]),
-]
-
-
-@pytest.mark.parametrize(("lanes", "script", "expected"), [row[1:] for row in INTERLEAVED],
-                         ids=[row[0] for row in INTERLEAVED])
-def test_interleaved_lanes(lanes, script, expected):
-    handed, _ = play(script, lanes)
-    assert handed == expected
-
-
-def test_a_lost_step_in_one_lane_leaves_the_other_lanes_case_alone():
-    _, state = play([*steps(0, OK), ("next", 0), *steps(1, OK), ("next", 1), ("next", 0)], 2)
-    assert state.restarts == {"c1": 1}
-    assert state.cases[1].outstanding.op is Op.FEED and "c2" not in state.restarts
-
-
-def test_a_resume_with_fewer_lanes_adopts_the_orphaned_case_as_lost():
-    _, state = play([*steps(0, OK), ("next", 0), *steps(1, OK, OK), ("next", 1)], 2)
-    state, mine = machine.next_step(state, 0, 1)  # lane 0's own lost feed restarts c1
-    state = drive(state, [OK, OK, ANSWER, ANSWER])
-    state, adopted = machine.next_step(state, 0, 1)
-    assert (mine.op, mine.case) == (Op.RESET, 0)
-    assert (adopted.op, adopted.case) == (Op.RESET, 1) and state.restarts == {"c1": 1, "c2": 1}
-
-
-def test_every_case_finishes_whatever_the_interleaving():
-    script = [*steps(1, OK, OK, ANSWER), *steps(0, OK, OK, ANSWER, ERROR), *steps(1, ERROR)]
-    _, state = play(script, 2)
-    assert state.done and state.failed_cases == {"c3": "reset failed: boom"}
-
-
-@pytest.mark.parametrize(("lane", "lanes"), [(2, 2), (-1, 2), (0, 0)])
-def test_a_lane_the_runner_does_not_have_is_refused(lane, lanes):
-    with pytest.raises(ProtocolViolation, match="not one of the runner's"):
-        machine.next_step(fresh(), lane, lanes)
-
-
-def test_a_retry_is_recognised_while_other_lanes_move():
-    state = fresh()
-    state, first = machine.next_step(state, 0, 2)
-    state, _ = machine.submit(state, first.step_id, OK)
-    state, other = machine.next_step(state, 1, 2)
-    state, _ = machine.submit(state, other.step_id, OK)
-    again, duplicate = machine.submit(state, first.step_id, OK)
-    assert duplicate and again == state

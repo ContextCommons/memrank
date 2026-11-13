@@ -13,7 +13,7 @@
 # permissions and limitations under the License.
 """The evaluation service over HTTP, for a shared or hosted service (``memrank serve``).
 
-Six routes, each one call on :class:`~memrank.service.engine.EvaluationService` -- the same
+Seven routes, each one call on :class:`~memrank.service.engine.EvaluationService` -- the same
 object ``memrank run`` uses in process. Handlers are synchronous on purpose: FastAPI runs them
 on its thread pool, and the store's transaction makes requests for one run take turns.
 """
@@ -32,6 +32,8 @@ from memrank.service.engine import EvaluationService, RunNotFinished
 from memrank.service.machine import ProtocolViolation, UnknownStep
 from memrank.service.protocol import (
     Ack,
+    Begun,
+    Pool,
     Reopened,
     RunCreate,
     RunCreated,
@@ -55,9 +57,13 @@ def _routes(app: FastAPI, service: EvaluationService) -> None:
     def create_run(request: RunCreate) -> RunCreated:
         return service.create(request)
 
+    @app.post("/v1/runs/{run_id}/begin")
+    def begin(run_id: str) -> Begun:
+        return service.begin(run_id)
+
     @app.post("/v1/runs/{run_id}/next")
-    def next_step(run_id: str, lane: int = 0, lanes: int = 1) -> Step:
-        return service.next(run_id, lane, lanes)
+    def next_step(run_id: str, pool: Pool = Pool.INGEST, in_order: bool = False) -> Step:
+        return service.next(run_id, pool, in_order)
 
     @app.post("/v1/runs/{run_id}/steps/{step_id}")
     def post_step(run_id: str, step_id: str, result: StepResult) -> Ack:

@@ -11,63 +11,53 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
 # implied. See the License for the specific language governing
 # permissions and limitations under the License.
-"""The runner's loop: ask the service for a step, carry it to the agent, report what happened.
+"""The runner's loop: register the run, carry the service's steps to the agent, judge, upload.
 
-Thin by design. The service decides what comes next and enforces the order; the runner only
-measures -- latency at its own boundary, around the connector call -- and reports faithfully.
-An agent that fails a step has that failure recorded and the run moves on. An agent that
-cannot be reached at all stops the run, because recording every remaining case as a failure
-would score the network rather than the agent; the run stays resumable.
+Thin by design. The service decides what comes next and enforces the order; the runner carries
+each step and reports what happened (:mod:`memrank.loop.steps`), as many at once as the run's
+ceilings allow (:mod:`memrank.loop.stages`).
 """
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
-from memrank.connect.base import AgentError, AgentUnreachable, Answer, Connector, answer_of
-from memrank.connect.probe import leak_probe
 from memrank.connect.process import started
 from memrank.connect.spec import AgentSpec
 from memrank.errors import MemrankError
-from memrank.loop import header, lanes, runtime
-from memrank.loop.client import retry_unreached
+from memrank.loop import header, runtime, stages
 from memrank.loop.event_log import EventLog
-from memrank.loop.explain import cause, explained
 from memrank.loop.grading import saved_result, start_grading
 from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.live import LiveRun
 from memrank.loop.live_answers import Recorder
 from memrank.loop.output import RESULT_FILE, write_outputs
-from memrank.loop.trace import RunTrace, Stage
+from memrank.loop.steps import (  # re-exported: what a caller of the run loop names
+    Evaluator,
+    Instruments,
+    ProbeIncomplete,
+    RunAborted,
+    carry_steps,
+    execute,
+    probe,
+)
+from memrank.loop.trace import Stage
 from memrank.loop.upload import Hosted, upload
 from memrank.loop.uploader import Uploader, start_uploading
-from memrank.service.protocol import (
-    Ack,
-    Op,
-    Reopened,
-    RunCreate,
-    RunCreated,
-    RunResult,
-    RunStatus,
-    Step,
-    StepResult,
-)
+from memrank.service.protocol import RunCreate, RunResult
 from memrank.service.scoring import apply_verdicts
 from memrank.term import style
+
+__all__ = ["AGENT_LOG", "Evaluator", "Finished", "Instruments", "ProbeIncomplete",
+           "RESULT_BEFORE_RETRY", "RunAborted", "RunOptions", "UploadIncomplete", "execute",
+           "run_agent"]
 
 #: The started agent's own stdout and stderr, kept beside the run it served.
 AGENT_LOG = "agent.log"
 
 #: How much of the error that stopped a run its page shows; the terminal has the rest.
 STOP_REASON_CHARS = 300
-
-
-class RunAborted(MemrankError):
-    """The run stopped before it finished. It is saved and can be resumed."""
 
 
 class UploadIncomplete(MemrankError):
@@ -85,136 +75,10 @@ class RunOptions:
     retry_failed: bool = False
     #: The ``provider:model`` that grades the answers; ``None`` records them unjudged.
     judge: str | None = DEFAULT_JUDGE
-    #: How many cases run side by side (:mod:`memrank.loop.lanes`); one is sequential.
-    concurrency: int = lanes.DEFAULT_CONCURRENCY
-
-
-@dataclass
-class Instruments:
-    """The runner's clock, pause and output, injectable so tests run with no real time.
-
-    Everything the runner echoes is narration about the run, so it goes to stderr; the answer --
-    the run's ending -- is the one thing on stdout (:mod:`memrank.term.style`).
-    """
-
-    clock: Callable[[], float] = time.perf_counter
-    sleep: Callable[[float], None] = time.sleep
-    echo: Callable[[str], None] = style.say
-    #: Where the run has got to, for its ending to read (:mod:`memrank.loop.trace`).
-    trace: RunTrace = field(default_factory=RunTrace)
-
-
-def execute(connector: Connector, step: Step, tools: Instruments,
-            failed: Callable[[AgentError], None] = lambda exc: None) -> StepResult:
-    """Carry one step to the agent. A reached-but-failed call becomes an error result.
-
-    ``failed`` sees the agent's failure itself, with its status and body, before it is reduced
-    to the error text the result records.
-    """
-    call = getattr(connector, step.op.value)
-    timing: dict[str, float] = {}
-
-    def attempt() -> str | Answer | None:
-        timing["start"] = tools.clock()  # only the attempt that reached the agent is timed
-        outcome = call(step)
-        timing["end"] = tools.clock()
-        return outcome
-
-    try:
-        outcome = retry_unreached(attempt, unreached=AgentUnreachable, sleep=tools.sleep)
-    except AgentError as exc:
-        failed(exc)
-        return StepResult(error=str(exc), elapsed_ms=_ms(timing["start"], tools.clock()))
-    elapsed = _ms(timing["start"], timing["end"])
-    if step.op is Op.ASK:
-        answer = answer_of(outcome or "")
-        return StepResult(answer=answer.text, retrieval_ms=answer.retrieval_ms, elapsed_ms=elapsed)
-    return StepResult(ok=True, elapsed_ms=elapsed)
-
-
-def _ms(start: float, end: float) -> float:
-    return max(0.0, (end - start) * 1000.0)
-
-
-def _progress(step: Step, result: StepResult) -> str:
-    """One step's line: where and what dimmed, so its outcome -- ok or FAILED -- stands out."""
-    where = step.progress
-    head = f"case {where.case}/{where.cases} {step.case_id}" if where else str(step.case_id)
-    what = step.op.value if step.op is not Op.ASK or where is None \
-        else f"ask {where.question}/{where.questions}"
-    status = (style.bad("FAILED " + (result.error or "")[:80]) if result.error
-              else style.good("ok"))
-    took = style.dim(f"  {result.elapsed_ms / 1000:.2f}s")
-    return f"{style.dim(f'{head}  {what:<10} ')}{status}{took}"
-
-
-class Evaluator(Protocol):
-    """The protocol calls. The in-process engine and the HTTP client both are one."""
-
-    def create(self, request: RunCreate) -> RunCreated: ...
-
-    def next(self, run_id: str, lane: int = 0, lanes: int = 1) -> Step: ...
-
-    def post(self, run_id: str, step_id: str, result: StepResult) -> Ack: ...
-
-    def retry_failed(self, run_id: str) -> Reopened: ...
-
-    def status(self, run_id: str) -> RunStatus: ...
-
-    def result(self, run_id: str) -> RunResult: ...
-
-
-class ProbeIncomplete(MemrankError):
-    """The leak probe could not complete, so no step was run."""
-
-
-def _probe(agent: AgentSpec) -> None:
-    try:
-        leak_probe(agent.connector)
-    except AgentError as exc:
-        raise ProbeIncomplete("The check that the agent keeps each conversation separate "
-                              "could not complete, so no question was asked.\n"
-                              f"{explained(exc, agent)}") from exc
-
-
-def _once(agent: AgentSpec, tools: Instruments) -> Callable[[AgentError], None]:
-    """Explain the run's first failed step in full; the rest are one line each and all are in
-    the result, so a run that fails every step does not print the same paragraph every time.
-    Every failure is counted by its cause, for the run's ending to sum up."""
-    told: list[bool] = []
-
-    def failed(exc: AgentError) -> None:
-        tools.trace.failed(cause(exc))
-        if not told:
-            told.append(True)
-            tools.echo(explained(exc, agent))
-
-    return failed
-
-
-def _drive(evaluator: Evaluator, agent: AgentSpec, run_id: str, tools: Instruments,
-           concurrency: int, live: LiveRun, recorder: Recorder) -> None:
-    """Carry every step the service hands out, ``concurrency`` cases at a time, until done.
-
-    Each answer the service accepts is logged and handed to the grading pool as it lands; the
-    pool takes it without blocking, so judging never holds a lane up (D1).
-    """
-
-    def carry(step: Step, failed: Callable[[AgentError], None]) -> StepResult:
-        try:
-            return execute(agent.connector, step, tools, failed)
-        except AgentUnreachable as exc:
-            raise RunAborted(f"{exc}. The run is saved; once the agent is up, resume it with "
-                             f"`memrank run --resume {run_id}` and the same --agent.") from exc
-
-    def post(step: Step, result: StepResult) -> None:
-        assert step.step_id is not None  # only DONE carries no step id
-        recorder.answered(evaluator.post(run_id, step.step_id, result))
-        tools.echo(_progress(step, result))
-        live.step_done()
-
-    lanes.drive(lanes.Lanes(next=lambda lane, count: evaluator.next(run_id, lane, count),
-                            carry=carry, post=post, failed=_once(agent, tools)), concurrency)
+    #: At most how many feeds, answers and judge calls run at once, and whether a case's
+    #: questions go in order (:mod:`memrank.loop.stages`). No score depends on the judge
+    #: ceiling; answers depend on the others only for an agent that stores what it is asked.
+    ceilings: stages.Ceilings = field(default_factory=stages.Ceilings)
 
 
 @dataclass
@@ -254,18 +118,19 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
     folder.mkdir(parents=True, exist_ok=True)  # a shared service's run has no folder here yet
     recorder = Recorder(EventLog(folder))
     session = runtime.begin(folder, created=options.resume is None, clock=tools.clock,
-                            started=began)
+                            started=began, settings=options.ceilings.settings())
     try:
         uploader = start_uploading(live.events, recorder.log, hosted.http, tools.echo, tools.sleep)
         trace.stage = Stage.CHECK
         status = evaluator.status(run_id)
         recorder.pool = start_grading(status, hosted, options.judge, recorder.log, live,
-                              _resume_command(run_id, agent, options.judge))
+                              _resume_command(run_id, agent, options.judge),
+                              workers=options.ceilings.judge)
         # A resumed run through a shared service names its evaluation only in its status.
         with started(agent.start, folder / AGENT_LOG, options.evaluation or status.evaluation):
-            _probe(agent)
+            probe(agent)
             trace.stage = Stage.STEPS
-            _drive(evaluator, agent, run_id, tools, options.concurrency, live, recorder)
+            carry_steps(evaluator, agent, run_id, tools, options.ceilings, live, recorder)
         tools.echo(style.prefixed("All steps done"))
         result = _finished(evaluator, run_id, tools, live, recorder, session)
         trace.stage, trace.judged = Stage.UPLOAD, result
@@ -312,7 +177,8 @@ def _online(evaluator: Evaluator, agent: AgentSpec, hosted: Hosted, options: Run
     run_id, folder = tools.trace.run_id, tools.trace.folder
     assert run_id is not None and folder is not None  # set by run_agent before it comes here
     status = evaluator.status(run_id)
-    for line in header.opening(hosted, status, agent.ref.name, options.judge, folder):
+    for line in header.opening(hosted, status, agent.ref.name, options.judge, folder,
+                               options.ceilings):
         tools.echo(line)
     live = LiveRun(hosted=hosted, run_id=run_id, agent=agent.ref.name,
                    evaluation=status.evaluation, status=lambda: evaluator.status(run_id),

@@ -267,6 +267,16 @@ clock, and the total is their sum. It is exact or not recorded, never estimated 
 with memrank 0.6.0 or earlier, resumed on a machine without its earlier sessions, or with a
 session that never recorded its end still shows the total first, as *Not recorded* with that
 reason.
+Each session's `start` line in `sessions.jsonl` also records the ceilings it ran with --
+`ingest_concurrency`, `answer_concurrency`, `judge_concurrency` -- and `questions_in_order`.
+Each is at most that many calls at once for its stage (`--concurrency` sets all three, 8 each by
+default). No score depends on the judge's. By default a conversation's questions are answered
+concurrently (since 0.6.2; earlier versions asked them one at a time, in order). For an agent that
+stores what it is asked or what it answered, concurrent questions can change one another's
+answers, so its score can depend on timing: it can differ between reruns and from a run made in
+order. `--questions-in-order` is the opt-out, one question per conversation at a time, in order;
+`questions_in_order` in `sessions.jsonl` says which a run used. A resume feeds every unfinished
+conversation again, under a new session id, so it never depends on the agent remembering what it was fed before the stop.
 
 ## Tokens
 

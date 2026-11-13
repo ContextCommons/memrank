@@ -2,32 +2,38 @@
 
 from __future__ import annotations
 
-from memrank.service.protocol import AgentRef, Op, RunCreate, StepResult
+from memrank.service.protocol import AgentRef, Op, Pool, RunCreate, StepResult
 from tests.service.conftest import create, post, step
 
 REQUEST = RunCreate(evaluation="locomo", agent=AgentRef(name="a"))
 
 
-def _to_ask(engine, run_id: str, lane: int = 0):
-    """Reset and feed the lane's case; the ask step that follows."""
+def _to_ask(engine, run_id: str):
+    """Reset and feed the next case; the ask step that follows."""
     for _ in (Op.RESET, Op.FEED):
-        current = engine.next(run_id, lane, 2)
+        current = engine.next(run_id, Pool.INGEST)
         assert engine.post(run_id, current.step_id, StepResult(ok=True, elapsed_ms=1)).outcomes \
             == []
-    return engine.next(run_id, lane, 2)
+    return engine.next(run_id, Pool.ANSWER)
+
+
+def _take(engine, run_id: str):
+    """A one-at-a-time runner's next step: a question if any, else a reset or feed."""
+    current = engine.next(run_id, Pool.ANSWER)
+    return current if current.op is not Op.DONE else engine.next(run_id, Pool.INGEST)
 
 
 def test_an_answer_makes_its_question_final_at_its_plan_position(engine):
     run_id = engine.create(REQUEST).run_id
     first = _to_ask(engine, run_id)
     engine.post(run_id, first.step_id, StepResult(answer="red", elapsed_ms=3))
-    ask = engine.next(run_id, 0, 2)
+    ask = engine.next(run_id, Pool.ANSWER)
     ack = engine.post(run_id, ask.step_id, StepResult(answer="blue", elapsed_ms=3))
     [final] = ack.outcomes
     assert final.position == 1 and final.outcome.question_id == "c1_q1"
     assert final.outcome.status == "not_judged" and final.outcome.answer == "blue"
     assert final.outcome.reference == ["blue"]  # released: its answer is final
-    second = _to_ask(engine, run_id, lane=1)
+    second = _to_ask(engine, run_id)
     [last] = engine.post(run_id, second.step_id, StepResult(error="502", elapsed_ms=3)).outcomes
     assert (last.position, last.outcome.status, last.outcome.error) == (2, "failed", "502")
 
@@ -55,7 +61,7 @@ def test_a_repeated_post_names_nothing_again(engine):
 def test_the_live_outcomes_equal_the_sealed_result(engine):
     run_id = engine.create(REQUEST).run_id
     logged = {}
-    while (current := engine.next(run_id)).op is not Op.DONE:
+    while (current := _take(engine, run_id)).op is not Op.DONE:
         result = (StepResult(answer="blue", elapsed_ms=2) if current.op is Op.ASK
                   else StepResult(ok=True, elapsed_ms=1))
         for final in engine.post(run_id, current.step_id, result).outcomes:

@@ -76,6 +76,7 @@ def test_a_runner_that_lost_a_feed_resumes_from_a_fresh_reset(client):
     run_id = create(client)
     post(client, run_id, step(client, run_id)["step_id"], ok=True)
     lost = step(client, run_id)
+    assert client.post(f"/v1/runs/{run_id}/begin").json()["restarted"] == ["c1"]
     resumed = step(client, run_id)
     assert resumed["op"] == "reset" and resumed["session_id"] != lost["session_id"]
     assert post(client, run_id, lost["step_id"], ok=True).status_code == 409
@@ -91,13 +92,19 @@ def test_a_run_with_judging_off_says_so(client):
     assert result["failure_rate"] == pytest.approx(1 / 3)
 
 
-def test_lanes_are_query_parameters_and_each_gets_its_own_case(client):
+def test_the_pool_is_a_query_parameter_and_a_runner_begins_over_http(client):
     run_id = create(client)
-    first = client.post(f"/v1/runs/{run_id}/next?lane=0&lanes=2").json()
-    second = client.post(f"/v1/runs/{run_id}/next?lane=1&lanes=2").json()
-    assert (first["case_id"], second["case_id"]) == ("c1", "c2")
-    refused = client.post(f"/v1/runs/{run_id}/next?lane=2&lanes=2")
-    assert refused.status_code == 409 and "not one of the runner's" in refused.text
+    first = client.post(f"/v1/runs/{run_id}/next?pool=ingest").json()
+    second = client.post(f"/v1/runs/{run_id}/next?pool=ingest").json()
+    assert (first["op"], first["case_id"], second["case_id"]) == ("reset", "c1", "c2")
+    none = client.post(f"/v1/runs/{run_id}/next?pool=answer&in_order=true").json()
+    assert none["op"] == "done"  # no case is fed yet
+    refused = client.post(f"/v1/runs/{run_id}/next?pool=judge")
+    assert refused.status_code == 422
+    begun = client.post(f"/v1/runs/{run_id}/begin").json()
+    assert begun == {"run_id": run_id, "restarted": []}  # lost resets are handed out again
+    again = client.post(f"/v1/runs/{run_id}/next?pool=ingest").json()
+    assert again["case_id"] == "c1" and again["step_id"] != first["step_id"]
 
 
 def test_status_counts_progress_and_hands_out_no_answer_or_reference(client):

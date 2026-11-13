@@ -28,6 +28,8 @@ import httpx
 from memrank.errors import MemrankError
 from memrank.service.protocol import (
     Ack,
+    Begun,
+    Pool,
     Reopened,
     RunCreate,
     RunCreated,
@@ -101,9 +103,12 @@ class ServiceClient:
         return RunCreated.model_validate(
             self._call("POST", "/v1/runs", request.model_dump(mode="json")))
 
-    def next(self, run_id: str, lane: int = 0, lanes: int = 1) -> Step:
-        return Step.model_validate(
-            self._call("POST", f"/v1/runs/{run_id}/next?lane={lane}&lanes={lanes}"))
+    def begin(self, run_id: str) -> Begun:
+        return Begun.model_validate(self._call("POST", f"/v1/runs/{run_id}/begin"))
+
+    def next(self, run_id: str, pool: Pool = Pool.INGEST, in_order: bool = False) -> Step:
+        query = f"pool={pool.value}&in_order={'true' if in_order else 'false'}"
+        return Step.model_validate(self._call("POST", f"/v1/runs/{run_id}/next?{query}"))
 
     def post(self, run_id: str, step_id: str, result: StepResult) -> Ack:
         return Ack.model_validate(self._call("POST", f"/v1/runs/{run_id}/steps/{step_id}",

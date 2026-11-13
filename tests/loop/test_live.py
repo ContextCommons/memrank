@@ -5,9 +5,10 @@ from __future__ import annotations
 import pytest
 
 from memrank.loop.run import Instruments, RunOptions, run_agent
+from memrank.loop.stages import Ceilings
 from tests.loop.conftest import PAGE, OrgApi, run_id_of, stub_grading
-from tests.loop.test_lanes import Memory, spec
 from tests.loop.test_run import quiet
+from tests.loop.test_stages import Memory, spec
 
 OPTIONS = RunOptions(evaluation="locomo", judge=None)
 
@@ -65,9 +66,10 @@ def test_a_progress_channel_that_fails_is_reported_once_and_the_run_finishes(eng
 def test_ctrl_c_leaves_the_run_stopped_online_and_a_resume_finishes_it_under_the_same_link(
         engine, tmp_path, org):
     echoed: list[str] = []
-    one_lane = RunOptions(evaluation="locomo", judge=None, concurrency=1)  # "3rd ask" is an order
+    one_each = RunOptions(evaluation="locomo", judge=None,  # "3rd ask" is an order
+                          ceilings=Ceilings(ingest=1, answer=1))
     with pytest.raises(KeyboardInterrupt):
-        run_agent(engine, spec(Interrupting(at=3)), one_lane, tmp_path, org.hosted(None),
+        run_agent(engine, spec(Interrupting(at=3)), one_each, tmp_path, org.hosted(None),
                   quiet(echoed))
     run_id = run_id_of(echoed)
     stopped = org.syncs[-1]
@@ -75,8 +77,10 @@ def test_ctrl_c_leaves_the_run_stopped_online_and_a_resume_finishes_it_under_the
     assert stopped["error"].startswith("interrupted (Ctrl-C) -- resume with `memrank run "
                                        f"--resume {run_id}")
     assert stopped["record"]["progress"]["retrieve"]["done"] == 1
-    resumed = run_agent(engine, spec(Memory()), RunOptions(resume=run_id, concurrency=1), tmp_path,
-                        org.hosted(None), quiet([]))
+    # A new agent that remembers nothing: a resume feeds every unfinished conversation again.
+    resumed = run_agent(engine, spec(Memory()), RunOptions(resume=run_id,
+                                                           ceilings=one_each.ceilings),
+                        tmp_path, org.hosted(None), quiet([]))
     assert org.states == ["running", "stopped", "running", "done"]
     assert resumed.url == PAGE.format(run_id=run_id) and resumed.result.run_id == run_id
     assert [q.answer for c in resumed.result.cases for q in c.questions] == \

@@ -14,10 +14,12 @@
 """The wire shapes between the evaluation service and a runner.
 
 Plain pydantic models with no web framework behind them, so the runner imports this module
-without installing the service. Six calls make up the whole protocol:
+without installing the service. Seven calls make up the whole protocol:
 
 - ``POST /v1/runs`` with :class:`RunCreate` -> :class:`RunCreated`
-- ``POST /v1/runs/{id}/next?lane=L&lanes=N`` -> :class:`Step` (lane 0 of 1 when omitted)
+- ``POST /v1/runs/{id}/begin`` -> :class:`Begun` (a runner starts; what was outstanding is lost)
+- ``POST /v1/runs/{id}/next?pool=ingest|answer&in_order=false`` -> :class:`Step`; ``DONE`` is
+  nothing from that pool now
 - ``POST /v1/runs/{id}/steps/{step_id}`` with :class:`StepResult` -> :class:`Ack`
 - ``POST /v1/runs/{id}/retry-failed`` -> :class:`Reopened` (only when asked: ``--retry-failed``)
 - ``GET /v1/runs/{id}/status`` -> :class:`RunStatus`
@@ -43,6 +45,13 @@ class Op(str, Enum):
     FEED = "feed"
     ASK = "ask"
     DONE = "done"
+
+
+class Pool(str, Enum):
+    """Which work a runner asks for: a case's reset and feed, or a fed case's next question."""
+
+    INGEST = "ingest"
+    ANSWER = "answer"
 
 
 class AgentRef(BaseModel):
@@ -166,6 +175,13 @@ class Ack(BaseModel):
     step_id: str
     duplicate: bool = False
     outcomes: list[FinalQuestion] = Field(default_factory=list)
+
+
+class Begun(BaseModel):
+    """A runner started. The cases whose lost feed or ask made them restart from a reset."""
+
+    run_id: str
+    restarted: list[str]
 
 
 class Reopened(BaseModel):

@@ -119,6 +119,7 @@ def test_a_judged_run_names_its_judge_haiku_unless_told(engine, tmp_path, org, j
     assert done.result.identity.judge == f"anthropic:{model}"
     assert done.result.identity.judge_model == model
     assert f"memrank: Judge anthropic:{model} with acme's ANTHROPIC_API_KEY" in echoed
+    assert "memrank: At most 8 feeds, 8 answers, 8 judge calls at once" in echoed
 
 
 def test_the_reference_agent_passes_the_leak_probe():

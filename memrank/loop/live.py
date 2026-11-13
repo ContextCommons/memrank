@@ -159,7 +159,7 @@ class LiveRun:
         self._send(channel, body)
 
     def _send(self, channel: Channel, body: dict[str, Any]) -> None:
-        """POST one sample, outside the lock so no lane waits on the network; its outcome is
+        """POST one sample, outside the lock so no step waits on the network; its outcome is
         handled under the lock. Any failure is reported (:meth:`_failed`), never raised."""
         answer: dict[str, Any] | None = None
         why = ""

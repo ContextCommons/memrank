@@ -18,6 +18,7 @@ from memrank.loop.event_log import EVENTS_FILE, EventLog
 from memrank.loop.grading_pool import RunUngraded
 from memrank.loop.judge import DEFAULT_JUDGE
 from memrank.loop.run import RunOptions, run_agent
+from memrank.loop.stages import Ceilings
 from memrank.service.protocol import Ack, RunResult, StepResult
 from tests.loop.conftest import OrgApi, passed, record_keys, run_id_of, stub_grading
 from tests.loop.test_run import anthropic_answering, full_context, quiet
@@ -98,7 +99,7 @@ def test_answers_are_graded_while_the_agent_is_still_answering(engine, tmp_path,
 
     stub_grading(monkeypatch, grade)
     agent = replace(full_context(), connector=WaitsForAVerdict("c1_q1", graded))
-    done = run_agent(engine, agent, RunOptions(evaluation="locomo", concurrency=1), tmp_path,
+    done = run_agent(engine, agent, RunOptions(evaluation="locomo", ceilings=Ceilings(ingest=1, answer=1)), tmp_path,
                      org.hosted(), quiet([]))
     assert done.result.judged  # c1_q1 was asked only after c1_q0 had been graded
 
