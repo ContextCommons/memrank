@@ -108,7 +108,9 @@ def test_every_answer_and_verdict_is_logged_and_the_result_is_judging_afters(
     monkeypatch.setitem(ADAPTERS, "anthropic", anthropic_answering(FakeJudge()))
     record_keys(monkeypatch, [])
     done = run_agent(engine, full_context(), LOCOMO, tmp_path, org.hosted(), quiet([]))
-    assert done.result == judged_after(engine, done.result.run_id)
+    assert done.result.runtime_ms is not None  # the run's own clock, which a rejudge has not
+    untimed = done.result.model_copy(update={"runtime_ms": None})
+    assert untimed == judged_after(engine, done.result.run_id)
     kinds = [event.kind for event in _events(done.folder)]
     assert kinds.count("judging") == 1 and kinds.index("judging") == 0
     assert kinds.count("answer") == 3 and kinds.count("verdict") == 3
@@ -168,7 +170,7 @@ def test_a_run_without_a_log_is_graded_from_its_result_on_resume(engine, tmp_pat
     record_keys(monkeypatch, [])
     done = run_agent(engine, full_context(), RunOptions(resume=run_id), tmp_path, org.hosted(),
                      quiet([]))
-    assert done.result == judged_after(engine, run_id)
+    assert done.result.model_copy(update={"runtime_ms": None}) == judged_after(engine, run_id)
     assert [e.kind for e in _events(done.folder)].count("answer") == 3
 
 

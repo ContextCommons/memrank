@@ -238,21 +238,72 @@ def not_answered(result: RunResult, groups: list[FailureGroup] | None) -> str:
     return f"Agent didn't answer {result.failed} of {result.questions}{why}"
 
 
-def retrieval(reported: ReportedTiming) -> str:
-    """The agent's own retrieval time, said to be its word: memrank did not measure it."""
-    return (f"retrieval {duration(reported.p50_ms)} typical, {duration(reported.p95_ms)} slow, "
-            f"reported by your agent, {reported.reported} of {reported.answers} questions")
+#: The names every surface gives a finished run's timings: this readout, ``report.html`` and
+#: the run page (``web-gui/lib/run-readout.ts``) (ATO-2698).
+TOTAL_RUNTIME = "Total evaluation runtime"
+ANSWER_TIME = "Answer time per question"
+INGESTION_TIME = "Ingestion time per conversation"
+RETRIEVAL_TIME = "Retrieval time per question"
+#: What the total covers, and that the time a run sat stopped is not in it.
+TOTAL_RUNTIME_SCOPE = ("from the start of the run until its last answer was graded, judging "
+                       "included; time stopped between resumes is not counted")
+#: What the total says when the run did not record it, and why a run would not have.
+RUNTIME_NOT_RECORDED = "Not recorded"
+RUNTIME_NOT_RECORDED_WHY = ("only runs made with memrank newer than 0.6.0 record it, and not when "
+                            "one was resumed on another machine or stopped without finishing")
+#: That the agent's retrieval time is inside memrank's answer time.
+RETRIEVAL_SCOPE = "part of the answer time, not added to it"
 
 
-def speed(result: RunResult) -> str:
-    """Typical and slow answer times, and the typical time to load one conversation's history."""
+@dataclass(frozen=True)
+class Timing:
+    """One named timing: its median and the slow figure, 1 answer in 20 slower than it."""
+
+    name: str
+    median: str
+    slow: str
+
+    def words(self) -> str:
+        return f"{self.median} median, {self.slow} slow (1 in 20)"
+
+
+def reported_by(reported: ReportedTiming) -> str:
+    """Whose figure the retrieval time is, and over how many questions when not all of them."""
+    if reported.reported == reported.answers:
+        return "reported by the agent"
+    return f"reported by the agent for {reported.reported} of {reported.answers} questions"
+
+
+def timings(result: RunResult) -> list[Timing]:
+    """The run's measured timings, in the order every surface shows them after the total:
+    ingestion, answer, then the agent's retrieval time only when it reported one."""
     latency = result.latency_ms
-    parts = []
-    if latency.get("ask_p50") is not None:
-        parts.append(f"answers {duration(latency.get('ask_p50'))} typical, "
-                     f"{duration(latency.get('ask_p95'))} slow (1 in 20)")
-    if result.retrieval is not None:
-        parts.append(retrieval(result.retrieval))
+    found = []
     if latency.get("feed_p50") is not None:
-        parts.append(f"loading the history {duration(latency.get('feed_p50'))} typical")
-    return "; ".join(parts) or "not measured: no step was timed"
+        found.append(Timing(INGESTION_TIME, duration(latency.get("feed_p50")),
+                            duration(latency.get("feed_p95"))))
+    if latency.get("ask_p50") is not None:
+        found.append(Timing(ANSWER_TIME, duration(latency.get("ask_p50")),
+                            duration(latency.get("ask_p95"))))
+    if result.retrieval is not None:
+        found.append(Timing(RETRIEVAL_TIME, duration(result.retrieval.p50_ms),
+                            duration(result.retrieval.p95_ms)))
+    return found
+
+
+def runtime_words(result: RunResult) -> str:
+    """The total runtime, or that it was not recorded and why; never an estimate."""
+    if result.runtime_ms is None:
+        return f"{RUNTIME_NOT_RECORDED} ({RUNTIME_NOT_RECORDED_WHY})"
+    return duration(result.runtime_ms)
+
+
+def speed_lines(result: RunResult) -> list[str]:
+    """The total runtime, or why it was not recorded, then each timing as one line."""
+    lines = [f"{TOTAL_RUNTIME}: {runtime_words(result)}"]
+    for timing in timings(result):
+        line = f"{timing.name}: {timing.words()}"
+        if timing.name == RETRIEVAL_TIME and result.retrieval is not None:
+            line += f", {reported_by(result.retrieval)}, {RETRIEVAL_SCOPE}"
+        lines.append(line)
+    return lines

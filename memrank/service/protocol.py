@@ -427,6 +427,11 @@ class RunResult(BaseModel):
     latency_ms: dict[str, float | None]
     #: The agent's own retrieval time per answer, when it reported any; None when it did not.
     retrieval: ReportedTiming | None = None
+    #: Total evaluation runtime: how long the run was going, from its start until its last
+    #: answer was graded, without the time it sat stopped between resumes. Recorded by
+    #: ``memrank run`` (:mod:`memrank.loop.runtime`); None when it could not be known exactly,
+    #: as for every run recorded before it was.
+    runtime_ms: float | None = None
     cases: list[CaseOutcome]
 
 

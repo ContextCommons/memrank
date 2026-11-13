@@ -97,7 +97,7 @@ def result_facts(result: RunResult,
                            if q.decision and q.decision.get("experimental")})
     if experimental:
         facts.append(("Experimental", f"{', '.join(experimental)}: {EXPERIMENTAL_WORDS}"))
-    facts.append(("Speed", readout.speed(result)))
+    facts.extend(_rows("Speed", readout.speed_lines(result)))
     judge = result.identity.judge_label()
     if judge:
         facts.append(("Judged by", judge))

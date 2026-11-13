@@ -8,12 +8,12 @@ evaluation = BEAM()
 ```
 
 Long conversations with questions testing ten memory abilities, at supported sizes of 100K,
-500K and 1M tokens.
+500K, 1M and 10M tokens.
 
 ## How it works
 
 Each conversation is a single user's narrative rather than stitched-together chats, and comes in
-size tiers -- memrank supports 100K, 500K and 1M tokens. Memrank gives one conversation to the
+size tiers -- memrank supports 100K, 500K, 1M and 10M tokens (`tier="10m"`). Memrank gives one conversation to the
 [system](../reference/system.md), then asks that conversation's probing questions; each
 conversation is its own group and is cleared afterwards.
 
@@ -49,7 +49,13 @@ A one-time download of the dataset, cached after the first run, or a local copy 
 `BEAM_DATA_PATH`. The download goes through Hugging Face's `datasets` package, which is the
 `benchmarks` extra rather than part of the base install: `pip install 'memrank[benchmarks]'`, or
 `uv add 'memrank[benchmarks]'`. Without it, an uncached tier is refused with that instruction
-before anything is fetched. The largest tier lives in a separate dataset and is not covered here.
+before anything is fetched.
+
+The 10M tier lives in a separate dataset, `Mohammadta/BEAM-10M`: ten conversations of about
+10 million tokens (roughly 49 million characters) each, 200 questions in all. Its conversations
+are organised as ten plans of ten batches; each batch becomes one session, in order, and is
+fed, asked and judged exactly as at the other tiers. It is cached one conversation per file, so
+the smoke and mini slices read only their own conversations.
 
 Quality also needs a judge, which means a model key and sending question text to that model.
 

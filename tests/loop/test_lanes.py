@@ -77,7 +77,7 @@ def org(monkeypatch) -> OrgApi:
 
 def comparable(result: RunResult) -> dict:
     """The result without what differs between any two runs: its id and its timings."""
-    data = result.model_dump(mode="json", exclude={"run_id", "latency_ms"})
+    data = result.model_dump(mode="json", exclude={"run_id", "latency_ms", "runtime_ms"})
     for case in data["cases"]:
         for question in case["questions"]:
             question.pop("elapsed_ms")

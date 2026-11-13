@@ -33,7 +33,7 @@ from memrank.connect.probe import leak_probe
 from memrank.connect.process import started
 from memrank.connect.spec import AgentSpec
 from memrank.errors import MemrankError
-from memrank.loop import header, lanes
+from memrank.loop import header, lanes, runtime
 from memrank.loop.client import retry_unreached
 from memrank.loop.event_log import EventLog
 from memrank.loop.explain import cause, explained
@@ -242,6 +242,7 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
     to resume it.
     """
     tools = tools or Instruments()
+    began = tools.clock()  # the session's time starts here, before its folder exists
     trace = tools.trace
     run_id = options.resume or _create(evaluator, agent, options)
     trace.run_id, trace.folder = run_id, output_root / run_id
@@ -252,6 +253,8 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
     trace.url = live.url
     folder.mkdir(parents=True, exist_ok=True)  # a shared service's run has no folder here yet
     recorder = Recorder(EventLog(folder))
+    session = runtime.begin(folder, created=options.resume is None, clock=tools.clock,
+                            started=began)
     try:
         uploader = start_uploading(live.events, recorder.log, hosted.http, tools.echo, tools.sleep)
         trace.stage = Stage.CHECK
@@ -264,13 +267,14 @@ def run_agent(evaluator: Evaluator, agent: AgentSpec, options: RunOptions, outpu
             trace.stage = Stage.STEPS
             _drive(evaluator, agent, run_id, tools, options.concurrency, live, recorder)
         tools.echo(style.prefixed("All steps done"))
-        result = _finished(evaluator, run_id, tools, live, recorder)
+        result = _finished(evaluator, run_id, tools, live, recorder, session)
         trace.stage, trace.judged = Stage.UPLOAD, result
         url = _upload(hosted, result, folder, agent, tools, uploader)
     except BaseException as exc:
         live.stopped(_stop_reason(exc, run_id, agent, options.judge))
         raise
     finally:
+        session.end()
         if recorder.pool is not None:
             recorder.pool.close(wait_for_gradings=False)  # drained unless the run is stopping
     return Finished(result=result, folder=folder, url=url or live.url, org=hosted.org)
@@ -347,11 +351,12 @@ def _stop_reason(exc: BaseException, run_id: str, agent: AgentSpec, spec: str | 
 
 
 def _finished(evaluator: Evaluator, run_id: str, tools: Instruments, live: LiveRun,
-              recorder: Recorder) -> RunResult:
+              recorder: Recorder, session: runtime.Session) -> RunResult:
     """The run's final result: the saved one on a resume, else recorded and judged here.
 
     Its verdicts are the ones the event log holds -- graded while the steps ran, or now, for any
-    answer still without one (:meth:`GradingPool.finish`).
+    answer still without one (:meth:`GradingPool.finish`). Its total runtime is read once the
+    last answer is graded.
     """
     folder = recorder.log.path.parent
     saved = saved_result(folder)
@@ -363,7 +368,7 @@ def _finished(evaluator: Evaluator, run_id: str, tools: Instruments, live: LiveR
     recorder.reconcile(recorded)  # answers accepted but never logged, if the runner stopped
     pool = recorder.pool
     if pool is None:
-        return recorded
+        return _sealed(folder, recorded, session)
     answers = recorded.questions - recorded.failed
     # The judge and whose key it uses were named before the first step (:mod:`header`).
     tools.echo(style.prefixed(f"Judging {answers} answers ..." if pool.grading.model
@@ -374,8 +379,14 @@ def _finished(evaluator: Evaluator, run_id: str, tools: Instruments, live: LiveR
     judged = apply_verdicts(recorded, pool.finish(), judge=grading.identity,
                             judge_samples=grading.samples,
                             judge_prompt_version=grading.prompt_version)
-    write_outputs(folder, judged)
-    return judged
+    return _sealed(folder, judged, session)
+
+
+def _sealed(folder: Path, result: RunResult, session: runtime.Session) -> RunResult:
+    """``result`` with the run's total runtime, written to the folder as the final outputs."""
+    final = result.model_copy(update={"runtime_ms": session.total_ms()})
+    write_outputs(folder, final)
+    return final
 
 
 def _create(evaluator: Evaluator, agent: AgentSpec, options: RunOptions) -> str:

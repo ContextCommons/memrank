@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import pytest
 
-from memrank.loop import readout
+from memrank.loop import readout, report
+from memrank.loop.trace import RunTrace
 from memrank.service.protocol import Interval, QuestionOutcome, ReportedTiming
 from memrank.service.scoring import apply_verdicts
+from memrank.term.outcome import plain
 from tests.service.test_scoring import FAIL, PASS, judged_by, recorded
 
 
@@ -147,19 +149,51 @@ def test_missing_answers_say_why_or_only_how_many():
     assert readout.not_answered(result.model_copy(update={"failed": 0}), None) == "none"
 
 
-def test_speed_is_typical_and_slow_in_human_units():
-    result = _judged().model_copy(update={"latency_ms": {
-        "ask_p50": 7300.0, "ask_p95": 11_800.0, "feed_p50": 209_000.0, "feed_p95": None}})
-    assert readout.speed(result) == ("answers 7.3 s typical, 11.8 s slow (1 in 20); "
-                                     "loading the history 3 min 29 s typical")
-    assert readout.speed(result.model_copy(update={"latency_ms": {}})) == \
-        "not measured: no step was timed"
+NOT_RECORDED = (f"{readout.TOTAL_RUNTIME}: {readout.RUNTIME_NOT_RECORDED} "
+                f"({readout.RUNTIME_NOT_RECORDED_WHY})")
 
 
-def test_speed_adds_the_agents_retrieval_time_only_when_it_reported_one():
+def test_speed_names_each_timing_with_its_unit_of_work_as_median_and_slow():
+    result = _judged().model_copy(update={"runtime_ms": 724_000.0, "latency_ms": {
+        "ask_p50": 7300.0, "ask_p95": 11_800.0, "feed_p50": 209_000.0, "feed_p95": 250_000.0}})
+    assert readout.speed_lines(result) == [
+        "Total evaluation runtime: 12 min 4 s",
+        "Ingestion time per conversation: 3 min 29 s median, 4 min 10 s slow (1 in 20)",
+        "Answer time per question: 7.3 s median, 11.8 s slow (1 in 20)"]
+
+
+def test_total_runtime_comes_first_and_says_not_recorded_when_it_was_not():
     result = _judged().model_copy(update={"latency_ms": {"ask_p50": 1700.0, "ask_p95": 3200.0}})
-    assert "retrieval" not in readout.speed(result)
-    reported = ReportedTiming(p50_ms=180.0, p95_ms=420.0, reported=3, answers=4)
-    assert readout.speed(result.model_copy(update={"retrieval": reported})) == (
-        "answers 1.7 s typical, 3.2 s slow (1 in 20); retrieval 180 ms typical, 420 ms slow, "
-        "reported by your agent, 3 of 4 questions")
+    assert readout.speed_lines(result) == [
+        NOT_RECORDED, "Answer time per question: 1.7 s median, 3.2 s slow (1 in 20)"]
+    assert readout.speed_lines(result.model_copy(update={"latency_ms": {}})) == [NOT_RECORDED]
+    assert "0.6.0" in readout.RUNTIME_NOT_RECORDED_WHY
+
+
+def test_retrieval_is_its_own_timing_only_when_the_agent_reported_it():
+    result = _judged().model_copy(update={"latency_ms": {"ask_p50": 1700.0, "ask_p95": 3200.0}})
+    assert not any("Retrieval" in line for line in readout.speed_lines(result))
+    every = ReportedTiming(p50_ms=180.0, p95_ms=420.0, reported=4, answers=4)
+    assert readout.speed_lines(result.model_copy(update={"retrieval": every}))[-1] == (
+        "Retrieval time per question: 180 ms median, 420 ms slow (1 in 20), reported by the "
+        "agent, part of the answer time, not added to it")
+    some = every.model_copy(update={"reported": 3})
+    assert readout.speed_lines(result.model_copy(update={"retrieval": some}))[-1] == (
+        "Retrieval time per question: 180 ms median, 420 ms slow (1 in 20), reported by the "
+        "agent for 3 of 4 questions, part of the answer time, not added to it")
+
+
+@pytest.mark.parametrize("retrieval", [None, ReportedTiming(p50_ms=180.0, p95_ms=420.0,
+                                                            reported=4, answers=4)])
+def test_the_run_ending_shows_each_timing_exactly_once(retrieval):
+    result = _judged().model_copy(update={"runtime_ms": 97_000.0, "retrieval": retrieval,
+                                          "latency_ms": {"ask_p50": 76.0, "ask_p95": 115.0,
+                                                         "feed_p50": 87.0, "feed_p95": 117.0}})
+    ending = plain(report.done(result, RunTrace(), None, "org"))
+    names = [readout.TOTAL_RUNTIME, readout.INGESTION_TIME, readout.ANSWER_TIME]
+    if retrieval is not None:
+        names.append(readout.RETRIEVAL_TIME)
+    assert all(ending.count(f"{name}:") == 1 for name in names), ending
+    assert ending.count(f"{readout.RETRIEVAL_TIME}:") == (retrieval is not None), ending
+    places = [ending.index(f"{name}:") for name in names]
+    assert places == sorted(places), ending

@@ -130,14 +130,17 @@ class LongMemEval(_Shipped):
 
 
 class BEAM(_Shipped):
-    """20 conversations / 400 questions at 100k, 35 / 700 at 500k and 1m; 2 questions per ability.
+    """20 conversations / 400 questions at 100k, 35 / 700 at 500k and 1m, 10 / 200 at 10m.
+
+    Two questions per ability in every conversation.
 
     Needs a one-time download from HuggingFace, through the `benchmarks` extra
     (`pip install 'memrank[benchmarks]'`), or BEAM_DATA_PATH; and a judge for any quality
     number: BEAM's gold answers are prose rubrics rather than verbatim spans, so no substring
     proxy is computed and the raw composite is withheld from ranking until judged. Unjudged,
-    this measures latency and failure rate. `tier` is "100k", "500k" or "1m", and an unknown one
-    is refused here, before anything is fetched.
+    this measures latency and failure rate. `tier` is "100k", "500k", "1m" or "10m" (a separate
+    HuggingFace dataset, ~49M characters per conversation), and an unknown one is refused here,
+    before anything is fetched.
     """
 
     def __init__(self, tier: str = "100k", slice: str | None = None, k: int = 10) -> None:

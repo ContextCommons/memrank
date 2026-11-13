@@ -22,6 +22,7 @@ stated without the internal command table, and `memrank.ops` is not in a public 
 from __future__ import annotations
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from memrank.runner import app
@@ -83,10 +84,26 @@ def test_version_prints_semver():
 
 def test_the_version_flag_and_the_version_command_cannot_disagree():
     """Both forms exist because both get typed; one implementation, so they say one thing."""
-    for form in (["--version"], ["-V"]):
+    for form in (["--version"], ["-v"], ["-V"]):
         result = runner.invoke(app, form)
         assert result.exit_code == 0, form
         assert result.stdout == runner.invoke(app, ["version"]).stdout, form
+
+
+def test_help_lists_the_short_version_flag_beside_the_long_one():
+    """`-v` is discoverable where `--version` is (ATO-2696)."""
+    result = runner.invoke(app, ["--help"], terminal_width=200)
+    assert result.exit_code == 0
+    version_rows = [line for line in result.output.splitlines() if "--version" in line]
+    assert len(version_rows) == 1 and "-v," in version_rows[0], result.output
+
+
+def test_a_subcommand_keeps_its_own_short_v_as_verbose():
+    """The root `-v` is parsed before the command only; after it, `-v` is still --verbose."""
+    root = typer.main.get_command(app)
+    task_exec = root.commands["task-exec"]  # type: ignore[attr-defined]
+    owners = [param.name for param in task_exec.params if "-v" in param.opts]
+    assert owners == ["verbose"]
 
 
 def test_the_root_callback_leaves_no_args_showing_help():
