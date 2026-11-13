@@ -50,3 +50,17 @@ def test_a_run_saved_before_lanes_is_refused_with_a_reason(tmp_path, monkeypatch
     path.write_text(json.dumps(saved))
     with pytest.raises(RunUnreadable, match="start a new run"):
         service.next(run_id)
+
+
+def test_a_store_reads_a_run_once_and_writes_every_save_to_its_file(tmp_path, monkeypatch):
+    service = fresh(tmp_path, monkeypatch)
+    run_id = service.create(REQUEST).run_id
+    service.next(run_id)
+    path = tmp_path / run_id / "run.json"
+    on_disk = json.loads(path.read_text())
+    assert on_disk["state"]["issued"] == 1  # the step handed out is in the file
+    path.write_text("not json")  # what this store holds no longer comes from the file
+    assert service.next(run_id).op.value == "reset"
+    assert json.loads(path.read_text())["state"]["issued"] == 2
+    again = fresh(tmp_path, monkeypatch)  # a new process reads the file
+    assert again.store.load(run_id)[1].issued == 2

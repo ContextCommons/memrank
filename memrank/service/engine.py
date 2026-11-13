@@ -34,7 +34,9 @@ from memrank.service.cases import Plan, build_plan, check_unchanged
 from memrank.service.machine import Outstanding, RunState
 from memrank.service.protocol import (
     Ack,
+    Begun,
     Op,
+    Pool,
     Progress,
     Reopened,
     RunCreate,
@@ -62,7 +64,8 @@ def _step(run_id: str, plan: Plan, state: RunState, out: Outstanding | None) -> 
     if out is None:
         return Step(op=Op.DONE)
     case = plan.case(state.case_ids[out.case])
-    question_index = state.cases[out.case].question_index
+    question_index = out.question_index if out.question_index is not None \
+        else state.cases[out.case].question_index
     step = Step(step_id=out.step_id, op=out.op, case_id=case.id,
                 session_id=machine.session_id(run_id, state, out.case),
                 progress=Progress(case=out.case + 1, cases=len(state.case_ids),
@@ -114,11 +117,22 @@ class EvaluationService:
         return RunCreated(run_id=run_id, cases=len(plan.cases),
                           questions=sum(len(c.queries) for c in plan.cases))
 
-    def next(self, run_id: str, lane: int = 0, lanes: int = 1) -> Step:
+    def begin(self, run_id: str) -> Begun:
+        """A runner starts on the run: every step outstanding now is lost (rule 4)."""
         with self.store.transaction(run_id):
             request, state = self.store.load(run_id)
-            state, out = machine.next_step(state, lane, lanes)
+            _plan(run_id, request, state)  # refused on other cases, as every resume is
+            state, restarted = machine.begin(state)
             self.store.save_state(run_id, state)
+        return Begun(run_id=run_id, restarted=restarted)
+
+    def next(self, run_id: str, pool: Pool = Pool.INGEST, in_order: bool = False) -> Step:
+        """The step ``pool`` hands out now (:func:`machine.next_step`); ``DONE`` when none."""
+        with self.store.transaction(run_id):
+            request, state = self.store.load(run_id)
+            state, out = machine.next_step(state, pool, in_order)
+            if out is not None:  # nothing handed out changes nothing worth writing
+                self.store.save_state(run_id, state)
         return _step(run_id, _plan(run_id, request, state), state, out)
 
     def post(self, run_id: str, step_id: str, result: StepResult) -> Ack:

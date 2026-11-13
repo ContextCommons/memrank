@@ -24,6 +24,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from memrank.loop.stages import Ceilings
 from memrank.loop.upload import Hosted
 from memrank.service.protocol import RunStatus
 from memrank.term.style import bold, dim, identity, link, prefixed
@@ -33,24 +34,42 @@ from memrank.term.style import bold, dim, identity, link, prefixed
 _SEP = " \u00b7 "
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
 def opening(hosted: Hosted, status: RunStatus, agent: str, judge: str | None,
-            folder: Path) -> list[str]:
-    """The lines before the run registers online: account, organisation, run, judge, folder.
+            folder: Path, ceilings: Ceilings) -> list[str]:
+    """The lines before the run registers online: account, organisation, run, ceilings, judge,
+    folder.
 
     The judge is named as typed (``router:bedrock/claude-haiku-4-5``), as the record names it.
     """
     account = hosted.account
     run = _SEP.join((f"Run {identity(status.run_id)}", status.evaluation, f"agent {bold(agent)}",
                      f"{status.cases} cases, {status.questions} questions"))
+    judged = status.judge and judge is not None and hosted.judge is not None
     lines = [f"Signed in as {identity(account.login)} {dim(f'<{account.email}>')}",
              f"Recording to org {identity(hosted.org)} {dim(f'({account.org_name})')}",
-             run]
+             run, at_once(ceilings, judged=judged)]
     if status.judge and judge is not None and hosted.judge is not None:
         # The key by name, so a run judged through an endpoint says whose key it spends.
         whose = f"with {hosted.org}'s {hosted.judge.key_name}"
         lines.append(f"Judge {bold(judge)} {dim(whose)}")
     lines.append(f"Saving locally to {dim(f'{folder}/')}")
     return [prefixed(line) for line in lines]
+
+
+def at_once(ceilings: Ceilings, *, judged: bool) -> str:
+    """The run's ceilings, in one line: ``At most 8 feeds, 8 answers, 8 judge calls at once``.
+
+    The judge's only when the run is judged; ``questions in order`` when they are.
+    """
+    parts = [_plural(ceilings.ingest, "feed"), _plural(ceilings.answer, "answer")]
+    if judged:
+        parts.append(_plural(ceilings.judge, "judge call"))
+    line = f"At most {', '.join(parts)} at once"
+    return f"{line}{_SEP}questions in order" if ceilings.questions_in_order else line
 
 
 def live(url: str | None) -> str:

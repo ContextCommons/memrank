@@ -19,7 +19,7 @@ the relay that empties it into ``POST /orgs/{org}/runs/{id}/events``
 size (decision D8): each append wakes the uploader; when no send is in flight it sends every
 event the server lacks, and events appended while a send is in flight ride the next one, split
 only at :data:`~memrank.service.live_events.MAX_UPLOAD_BYTES`. One send at a time, on a worker
-thread of its own, so neither a lane nor a judge worker ever waits on the network.
+thread of its own, so neither the steps nor a judge worker ever wait on the network.
 
 The server's cursor (``through_seq``) is where sending starts: from the registration's ``live``
 answer, and from each acknowledgement after. A resumed run therefore sends only what the server

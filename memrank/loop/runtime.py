@@ -85,13 +85,17 @@ class Session:
 
 
 def begin(folder: Path, *, created: bool, clock: Callable[[], float],
-          started: float) -> Session:
+          started: float, settings: dict[str, int | bool] | None = None) -> Session:
     """Start a session in ``folder``'s ledger; ``created`` when this session created the run.
 
     ``started`` is the clock reading when the session began, taken before the run folder existed.
+    ``settings`` are recorded on its ``start`` line: how this session ran, which a resume may
+    change -- ``ingest_concurrency``, ``answer_concurrency``, ``judge_concurrency`` and
+    ``questions_in_order`` (:meth:`memrank.loop.stages.Ceilings.settings`). No score depends on
+    the judge's; answers depend on the others only for an agent that stores what it is asked.
     """
     path = folder / SESSIONS_FILE
     earlier = 0.0 if created else _earlier_ms(path)
     session = Session(path=path, clock=clock, started=started, earlier_ms=earlier)
-    session._append({"event": "start", "created": created})
+    session._append({"event": "start", "created": created, **(settings or {})})
     return session

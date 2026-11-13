@@ -67,6 +67,10 @@ class FolderRunStore:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._lock = threading.RLock()
+        #: Each run as last read or written by this store, so a step neither parses nor
+        #: re-reads a file that grows with the run. The file stays the record: it is written
+        #: whole on every save, and what a new process reads.
+        self._runs: dict[str, tuple[RunCreate, RunState]] = {}
 
     def run_dir(self, run_id: str) -> Path:
         if not run_id or "/" in run_id or run_id.startswith("."):
@@ -85,6 +89,13 @@ class FolderRunStore:
         self._write_run(run_id, request, state)
 
     def load(self, run_id: str) -> tuple[RunCreate, RunState]:
+        """The run's request and state. The state is shared: change a copy, then save it."""
+        with self._lock:
+            if run_id not in self._runs:
+                self._runs[run_id] = self._read(run_id)
+            return self._runs[run_id]
+
+    def _read(self, run_id: str) -> tuple[RunCreate, RunState]:
         path = self.run_dir(run_id) / RUN_FILE
         if not path.is_file():
             raise RunNotFound(f"no run {run_id!r}: {path} does not exist")
@@ -101,8 +112,11 @@ class FolderRunStore:
         with self._lock:
             request, _ = self.load(run_id)
             self._write_run(run_id, request, state)
+            self._runs[run_id] = (request, state)
 
     def _write_run(self, run_id: str, request: RunCreate, state: RunState) -> None:
+        # Compact: it is rewritten on every step and read by memrank alone, and an indented
+        # dump goes through json's pure-Python encoder, many times slower on a large run.
         write_json(self.run_dir(run_id) / RUN_FILE,
                    {"request": request.model_dump(mode="json"),
-                    "state": state.model_dump(mode="json")})
+                    "state": state.model_dump(mode="json")}, indent=None)

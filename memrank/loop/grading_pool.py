@@ -13,8 +13,8 @@
 # permissions and limitations under the License.
 """Grading each answer of a live run the moment it is final, beside the agent, never in its way.
 
-Decision D1: a pool of judge workers grades answers while the lanes go on asking. A lane hands
-an answer over and returns at once -- the queue is unbounded -- so a slow or failing judge never
+Decision D1: a pool of judge workers grades answers while the run goes on asking. The runner
+hands an answer over and returns at once -- the queue is unbounded -- so a slow or failing judge never
 slows the agent. Each verdict is appended to the run's event log, which drops it if the question
 has been answered again meanwhile.
 

@@ -10,8 +10,8 @@ memrank run my-eval.yaml --agent ./my-agent.yaml
 
 `memrank run` treats an argument that contains `/` or ends in `.yaml`, `.yml` or `.jsonl` as an
 evaluation file, and anything else as a shipped evaluation (`memrank evals ls`). Everything else
-about the run is the same: `--cases`, `--questions`, `--seed`, `--concurrency`, `--no-judge`,
-`--resume`, the live page, the upload to your organisation's run history and the ending.
+about the run is the same: `--cases`, `--questions`, `--seed`, `--concurrency`,
+`--ingest-concurrency`, `--answer-concurrency`, `--judge-concurrency`, `--questions-in-order`, `--no-judge`, `--resume`, the live page, the upload to your organisation's run history and the ending.
 
 A file that is malformed is refused before anything runs, with every problem named by its case,
 question and field:

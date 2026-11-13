@@ -21,6 +21,8 @@ stated without the internal command table, and `memrank.ops` is not in a public 
 
 from __future__ import annotations
 
+import re
+
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -124,3 +126,39 @@ def test_run_names_its_judge_as_provider_model_and_the_old_flag_is_gone():
     refused = runner.invoke(app, ["run", "locomo", "--agent", "full-context",
                                   "--judge-model", "claude-haiku-4-5"])
     assert refused.exit_code != 0
+
+
+def _help_words() -> str:
+    result = runner.invoke(app, ["run", "--help"], terminal_width=200)
+    assert result.exit_code == 0
+    # Rich wraps the help in a box; read it as one line of words.
+    return re.sub(r"[\u2502\s]+", " ", result.output)
+
+
+@pytest.mark.parametrize("option", ["--concurrency", "--ingest-concurrency",
+                                    "--answer-concurrency", "--judge-concurrency",
+                                    "--questions-in-order"])
+def test_every_concurrency_option_says_at_most_what(option):
+    words = _help_words()
+    assert option in words
+    # the option, its short form and metavar if any, its range, then its help
+    assert re.search(re.escape(option) + r"(?: -j)?(?: N)?(?: \[x>=1\])? At most", words), option
+
+
+def test_each_stage_ceiling_shows_its_default_and_the_shorthand():
+    words = _help_words()
+    for option in ("--ingest-concurrency", "--answer-concurrency", "--judge-concurrency"):
+        assert "[default: (8, or --concurrency)]" in words.split(option, 1)[1], option
+
+
+def test_judge_concurrency_with_no_judge_is_refused_before_anything_runs():
+    refused = runner.invoke(app, ["run", "locomo", "--agent", "full-context", "--no-judge",
+                                  "--judge-concurrency", "5"])
+    assert refused.exit_code == 2
+    assert "--no-judge makes none" in refused.output
+
+
+def test_an_answer_concurrency_below_one_is_refused():
+    refused = runner.invoke(app, ["run", "locomo", "--agent", "full-context",
+                                  "--answer-concurrency", "0"])
+    assert refused.exit_code == 2

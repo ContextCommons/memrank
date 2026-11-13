@@ -58,6 +58,6 @@ class RunTrace:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def failed(self, cause: str) -> None:
-        """Count one failed step; called from whichever lane's worker carried it."""
+        """Count one failed step; called from whichever stage worker carried it."""
         with self._lock:
             self.failures[cause] += 1

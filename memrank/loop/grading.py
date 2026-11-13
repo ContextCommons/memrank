@@ -54,8 +54,9 @@ def judge_config(spec: str | None, hosted: Hosted) -> JudgeConfig | None:
 
 
 def start_grading(status: RunStatus, hosted: Hosted, spec: str | None, log: EventLog,
-          live: LiveRun, resume: str) -> GradingPool | None:
-    """The run's grading pool, started; None when the run is not judged or already is.
+          live: LiveRun, resume: str, *, workers: int) -> GradingPool | None:
+    """The run's grading pool of ``workers`` judge calls at once, started; None when the run is
+    not judged or already is.
 
     Whether its judging calls a model is the plan's to say (``status.uses_model``), so a key it
     needs and does not have is refused here, before the first step rather than after the last.
@@ -72,7 +73,7 @@ def start_grading(status: RunStatus, hosted: Hosted, spec: str | None, log: Even
     def explain(exc: Exception) -> Exception:
         return (judge_failure(exc, target) if target else None) or exc
 
-    pool = GradingPool(log, grading, resume=resume, graded=live.one_judged,
+    pool = GradingPool(log, grading, resume=resume, workers=workers, graded=live.one_judged,
                        explain=explain)
     pool.start()
     return pool
