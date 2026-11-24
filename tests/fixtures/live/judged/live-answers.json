@@ -5,6 +5,7 @@
       "status": "pending",
       "error": null,
       "restarts": 0,
+      "feed_usage": null,
       "questions": [
         {
           "case_id": "c1",
@@ -25,6 +26,7 @@
           "error": null,
           "elapsed_ms": 140.0,
           "retrieval_ms": 9.5,
+          "usage": null,
           "score": 1.0,
           "passed": true,
           "rationale": "matches",
@@ -50,6 +52,7 @@
           "error": null,
           "elapsed_ms": 110.0,
           "retrieval_ms": null,
+          "usage": null,
           "score": 0.0,
           "passed": false,
           "rationale": "differs",
@@ -63,6 +66,7 @@
       "status": "pending",
       "error": null,
       "restarts": 0,
+      "feed_usage": null,
       "questions": [
         {
           "case_id": "c2",
@@ -83,6 +87,7 @@
           "error": "feed failed: HTTP 500 from the agent",
           "elapsed_ms": null,
           "retrieval_ms": null,
+          "usage": null,
           "score": 0.0,
           "passed": null,
           "rationale": null,
@@ -108,6 +113,7 @@
           "error": "feed failed: HTTP 500 from the agent",
           "elapsed_ms": null,
           "retrieval_ms": null,
+          "usage": null,
           "score": 0.0,
           "passed": null,
           "rationale": null,

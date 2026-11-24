@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from memrank.errors import MemrankError
-from memrank.service.protocol import Step
+from memrank.service.protocol import Step, TokenUsage
 
 
 class ConnectorConfigError(MemrankError):
@@ -65,11 +65,13 @@ class Answer:
 
     ``retrieval_ms`` is the agent's own claim about its memory retrieval for this answer, None
     when it made none. memrank cannot check it, so it is kept apart from the time memrank
-    measures around the call (:func:`memrank.loop.run.execute`).
+    measures around the call (:func:`memrank.loop.run.execute`). ``usage`` is the tokens it
+    reports its paid components used on the step, None when it reported none.
     """
 
     text: str
     retrieval_ms: float | None = None
+    usage: list[TokenUsage] | None = None
 
 
 def answer_of(reply: str | Answer) -> Answer:
@@ -80,12 +82,13 @@ def answer_of(reply: str | Answer) -> Answer:
 class Connector(Protocol):
     """Carries steps to one agent. Each method either succeeds or raises one of the above.
 
-    ``ask`` returns the answer text, or an :class:`Answer` when the agent reports more.
+    ``ask`` returns the answer text, or an :class:`Answer` when the agent reports more; ``feed``
+    returns the token usage the agent reported for the step, or None when it reported none.
     """
 
     def reset(self, step: Step) -> None: ...
 
-    def feed(self, step: Step) -> None: ...
+    def feed(self, step: Step) -> list[TokenUsage] | None: ...
 
     def ask(self, step: Step) -> str | Answer: ...
 

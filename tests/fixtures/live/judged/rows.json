@@ -19,7 +19,8 @@
       "answer": "a blue car",
       "error": null,
       "elapsed_ms": 140.0,
-      "retrieval_ms": 9.5
+      "retrieval_ms": 9.5,
+      "usage": null
     },
     {
       "question_id": "c1_q1",
@@ -40,7 +41,8 @@
       "answer": "June",
       "error": null,
       "elapsed_ms": 110.0,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     },
     {
       "question_id": "c2_q0",
@@ -61,7 +63,8 @@
       "answer": null,
       "error": "feed failed: HTTP 500 from the agent",
       "elapsed_ms": null,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     },
     {
       "question_id": "c2_q1",
@@ -82,7 +85,8 @@
       "answer": null,
       "error": "feed failed: HTTP 500 from the agent",
       "elapsed_ms": null,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     },
     {
       "question_id": "c3_q0",
@@ -103,7 +107,8 @@
       "answer": "Paris, France",
       "error": null,
       "elapsed_ms": 95.0,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     },
     {
       "question_id": "c3_q1",
@@ -124,7 +129,8 @@
       "answer": "Tuesday",
       "error": null,
       "elapsed_ms": 100.0,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     }
   ],
   "judging": {

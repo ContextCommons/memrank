@@ -38,8 +38,10 @@ from memrank.service.protocol import (
     ReportedTiming,
     RunCreate,
     RunResult,
+    TokenUsage,
 )
 from memrank.service.scoring import AWAITING_JUDGE, NOT_JUDGED, summarize
+from memrank.service.usage import summarize_usage
 
 #: The query keys grading reads besides the question text and category: what a benchmark's
 #: judge shape reads, and an evaluation file's grader and choices.
@@ -74,6 +76,7 @@ def _question(case: Case, index: int, asked: Recorded | None,
     else:
         outcome.status, outcome.answer = "not_judged", asked.result.answer
         outcome.retrieval_ms = asked.result.retrieval_ms
+        outcome.usage = asked.result.usage
     return outcome
 
 
@@ -85,7 +88,14 @@ def _case(case: Case, state: RunState) -> CaseOutcome:
     pending = any(q.status == "pending" for q in questions)
     status = "failed" if failed else ("pending" if pending else "complete")
     return CaseOutcome(case_id=case.id, status=status, error=failed,
-                       restarts=state.restarts.get(case.id, 0), questions=questions)
+                       restarts=state.restarts.get(case.id, 0),
+                       feed_usage=_feed_usage(case.id, state), questions=questions)
+
+
+def _feed_usage(case_id: str, state: RunState) -> list[TokenUsage] | None:
+    """The usage the case's last recorded feed reported; None when it reported none."""
+    feeds = [r for r in state.recorded.values() if r.op is Op.FEED and r.case_id == case_id]
+    return feeds[-1].result.usage if feeds else None
 
 
 def final_questions(plan: Plan, state: RunState, step_id: str) -> list[FinalQuestion]:
@@ -174,11 +184,12 @@ def _identity(request: RunCreate, plan: Plan) -> Identity:
 
 def build_result(run_id: str, *, request: RunCreate, plan: Plan, state: RunState) -> RunResult:
     """The run as recorded: answers, failures and latency, with no answer graded."""
+    cases = [_case(case, state) for case in plan.cases]
     result = RunResult(
         run_id=run_id, evaluation=plan.evaluation, agent=request.agent,
         identity=_identity(request, plan), status="complete", judged=False,
         notice=AWAITING_JUDGE if request.judge else NOT_JUDGED, score=_NO_SCORE,
         per_category={}, failure_rate=0.0, questions=0, failed=0, unjudged=0,
         latency_ms=_latency(state), retrieval=_retrieval(state),
-        cases=[_case(case, state) for case in plan.cases])
+        usage=summarize_usage(cases), cases=cases)
     return summarize(result)

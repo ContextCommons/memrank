@@ -36,6 +36,9 @@ ask: [python3, /abs/path/agent.py, ask, "{session_id}", "{question}"]  # answer 
 - Optional: `ask_json: {answer: answer, retrieval_ms: retrieval_ms}` makes `ask` print one JSON
   object instead, with the answer and the agent's own retrieval time read from it by JMESPath
   (see `ask.retrieval_ms` under http). Without `ask_json`, stdout is the answer as plain text.
+  `ask_json` may also name `usage`, and `feed_json: {usage: usage}` makes `feed` print a JSON
+  object read only for it: the tokens the agent's paid components were billed on that step
+  (see [Reporting token usage](#reporting-token-usage)).
 
 ## openai-chat: an OpenAI Chat Completions server
 
@@ -54,7 +57,9 @@ Each past session is POSTed to `/v1/chat/completions` as one request with
 to these); each question is a request under the same `user` with `"memrank_op": "ask"`, and the
 answer is `choices[0].message.content`. To report how long its memory retrieval took for an
 answer, the agent adds a top-level `"memrank_retrieval_ms": <milliseconds>` to that completion
-(see `ask.retrieval_ms` under http); without it, none is reported. `start.argv` may use `{python}` and `{evaluation}` (the
+(see `ask.retrieval_ms` under http); without it, none is reported. Any completion, a history
+request's or a question's, may likewise carry a top-level `"memrank_usage": [...]` (see
+[Reporting token usage](#reporting-token-usage)). `start.argv` may use `{python}` and `{evaluation}` (the
 run's eval ref, e.g. `beam:100k`, or its evaluation file's path), for a server that answers
 differently per evaluation; no other variable is available there.
 
@@ -82,8 +87,33 @@ ask: {path: /ask, body: {session: "{session_id}", q: "{question}"}, answer: answ
   retrieval took for this answer, in milliseconds, e.g. `meta.retrieval_ms`. Memrank records it
   beside the answer time it measures, as the agent's own report. An answer where it finds
   nothing counts as not reported; a value that is not a non-negative number fails the answer.
+- `ask.usage` and `feed.usage` (optional) are JMESPath expressions locating the step's token
+  usage (see [Reporting token usage](#reporting-token-usage)); a feed of several requests
+  reports the entries of all of them.
 - `start` works as in openai-chat. Every call also has `{session_id}`, `{case_id}` and the file's
   own `vars`.
+
+## Reporting token usage
+
+An agent may report what its paid components were billed on a feed or an ask step, as a list of
+entries copied from its provider's response (not estimated):
+
+```json
+[{"component": "reader", "provider": "anthropic", "model": "claude-haiku-4-5",
+  "input_tokens": 1834, "output_tokens": 12},
+ {"component": "embedder", "provider": "openai", "model": "text-embedding-3-small",
+  "input_tokens": 9}]
+```
+
+- One entry per paid component or per billed call. `component` is the agent's name for the part;
+  `reader` is the model that writes the answer, and its input tokens on an ask are the question's
+  context tokens. `provider` and `model` are who billed it and the model id as billed.
+- `input_tokens` is every input token billed, cached or not; `output_tokens` is omitted for an
+  embedding. Counts are whole numbers, at least 0. No other keys are accepted.
+- Leave the field out when you do not know; send `[]` when nothing paid was called. A malformed
+  list fails the step.
+- memrank prices the entries from its price table; a provider/model it does not price gets no
+  cost at all (the tokens are still shown), never $0.
 
 ## `{python}`
 

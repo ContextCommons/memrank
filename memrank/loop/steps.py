@@ -50,6 +50,7 @@ from memrank.service.protocol import (
     RunStatus,
     Step,
     StepResult,
+    TokenUsage,
 )
 from memrank.term import style
 
@@ -84,7 +85,7 @@ def execute(connector: Connector, step: Step, tools: Instruments,
     call = getattr(connector, step.op.value)
     timing: dict[str, float] = {}
 
-    def attempt() -> str | Answer | None:
+    def attempt() -> str | Answer | list[TokenUsage] | None:
         timing["start"] = tools.clock()  # only the attempt that reached the agent is timed
         outcome = call(step)
         timing["end"] = tools.clock()
@@ -97,9 +98,11 @@ def execute(connector: Connector, step: Step, tools: Instruments,
         return StepResult(error=str(exc), elapsed_ms=_ms(timing["start"], tools.clock()))
     elapsed = _ms(timing["start"], timing["end"])
     if step.op is Op.ASK:
-        answer = answer_of(outcome or "")
-        return StepResult(answer=answer.text, retrieval_ms=answer.retrieval_ms, elapsed_ms=elapsed)
-    return StepResult(ok=True, elapsed_ms=elapsed)
+        answer = answer_of(outcome if isinstance(outcome, (str, Answer)) else "")
+        return StepResult(answer=answer.text, retrieval_ms=answer.retrieval_ms,
+                          usage=answer.usage, elapsed_ms=elapsed)
+    usage = outcome if step.op is Op.FEED and isinstance(outcome, list) else None
+    return StepResult(ok=True, usage=usage, elapsed_ms=elapsed)
 
 
 def _ms(start: float, end: float) -> float:
