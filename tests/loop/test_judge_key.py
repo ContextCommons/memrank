@@ -17,7 +17,7 @@ HAIKU = resolve("anthropic:claude-haiku-4-5")
 GPT = resolve("openai:gpt-5")
 ROUTER = resolve("router:bedrock/claude-haiku-4-5", (Endpoint(
     name="router", adapter="openai", api_base="https://llm.internal.example/v1",
-    key_ref="ATOMIC_ROUTER_API_KEY", fingerprint="e1@1"),))
+    key_ref="ROUTER_API_KEY", fingerprint="e1@1"),))
 
 RERUN = "memrank run locomo --agent full-context --no-judge"
 
@@ -105,9 +105,9 @@ def test_a_missing_endpoint_key_is_refused_with_the_steps_that_save_it_never_ask
     with pytest.raises(JudgeKeyMissing) as step:
         judge_key(http, "acme", ROUTER, prompt(GOOD)[0], rerun)
     assert commands(step.value) == (
-        "memrank secrets set ATOMIC_ROUTER_API_KEY --org acme",
+        "memrank secrets set ROUTER_API_KEY --org acme",
         "memrank endpoints add router --adapter openai --base-url <URL> "
-        "--key-ref ATOMIC_ROUTER_API_KEY --org acme", RERUN)
+        "--key-ref ROUTER_API_KEY --org acme", RERUN)
     assert "the endpoint 'router'" in step.value.statement and saved == []
     assert "llm.internal.example" not in str(step.value)
 

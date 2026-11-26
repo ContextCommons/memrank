@@ -44,7 +44,8 @@ where it already runs.
    anything, it checks that your agent keeps conversations separate.
 3. **Compare runs.** Each run reports the score, the failures and the latency. Put it beside an
    earlier version of your agent, another memory setup, or a baseline Memrank ships, such as
-   `full-context`, which answers from the whole history with no memory engine. Runs with the
+   `full-context`, which answers from the whole history with no memory engine (cutting its
+   oldest turns when the history is longer than its model accepts). Runs with the
    same evaluation, sample and seed ask the same questions.
 
 Answers are judged by an LLM judge with your organisation's own API key, on your machine. Each

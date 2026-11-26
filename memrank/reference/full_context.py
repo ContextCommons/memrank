@@ -24,8 +24,14 @@ full-context --evaluation REF`` fixes the prompt for the process; the shipped sp
 run's ``{evaluation}``.
 
 History requests (``metadata.memrank_op == "feed"``) are stored and answered with an empty
-message, without calling the model. A request without ``user`` is refused: an agent that cannot
+message, without calling the model, so each reports ``memrank_usage: []``: nothing paid was called.
+An answer reports, as ``memrank_usage``, the tokens its provider's response says the ``reader``
+call was billed (:mod:`memrank.judging.providers.usage`), or nothing when the response gave none. A request without ``user`` is refused: an agent that cannot
 tell sessions apart must not guess.
+
+A history longer than the reader's input limit is cut from the oldest end until it fits
+(:mod:`memrank.reference.fit`), and the agent says so in one note on stderr; a history that fits is sent whole.
+The usage reported is the answered request's, since a refused request bills nothing.
 """
 
 from __future__ import annotations
@@ -38,10 +44,14 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from memrank.connect.presets import USAGE_FIELD
 from memrank.connect.template import CURRENT_DATE, SESSION_DATE
 from memrank.judging.judge import READER, Completer, generate_answer
 from memrank.judging.prompts import AnswerPrompt
-from memrank.reference import PROVIDER_FAILED, PROVIDER_REFUSED
+from memrank.judging.providers.usage import collecting
+from memrank.reference import PROVIDER_FAILED, PROVIDER_REFUSED, fit
+from memrank.service.protocol import READER_COMPONENT, TokenUsage
+from memrank.term import style
 
 FEED_OP = "feed"
 
@@ -79,6 +89,45 @@ def _question(messages: list[dict[str, Any]]) -> tuple[str, str | None]:
     return str(users[-1].get("content") or ""), date
 
 
+def _answer_fitting(complete: Completer, prompt: AnswerPrompt, history: list[dict[str, Any]],
+                    question: str, date: str | None) -> str:
+    """The reader's answer from the most recent part of ``history`` the provider accepts.
+
+    The whole history is sent first. A "prompt is too long" refusal cuts the oldest turns in
+    proportion to the provider's own count and asks again, at most ``fit.MAX_FIT_ROUNDS`` times;
+    any other failure, or a history that still does not fit, is raised as it came.
+    """
+    kept = history
+    for round_number in range(fit.MAX_FIT_ROUNDS + 1):
+        context = _history_text(kept)
+        try:
+            answer = generate_answer(complete, question=question, context=context,
+                                     model=READER, prompt=prompt, query_date=date)
+        except Exception as exc:
+            over = fit.overflow(exc)
+            if over is None or round_number == fit.MAX_FIT_ROUNDS:
+                raise
+            system, user = prompt.render(question=question, context=context, query_date=date)
+            shorter = fit.cut_oldest(kept, fit.chars_to_drop(over, len(system) + len(user)))
+            if shorter is None:
+                raise
+            kept = shorter
+            continue
+        if kept is not history:
+            _say_cut(history, kept, question)
+        return answer
+    raise AssertionError("unreachable: the last round returns or raises")
+
+
+def _say_cut(history: list[dict[str, Any]], kept: list[dict[str, Any]], question: str) -> None:
+    """One stderr line saying how much of a history was dropped to answer ``question``."""
+    all_turns, all_chars = fit.turns(history)
+    kept_turns, kept_chars = fit.turns(kept)
+    style.note(f"full-context: history too long for the reader; dropped the oldest "
+               f"{all_turns - kept_turns} of {all_turns} turns ({all_chars - kept_chars:,} of "
+               f"{all_chars:,} characters) to answer {question[:80]!r}")
+
+
 def provider_failure(exc: Exception, provider: str, key_name: str) -> dict[str, Any]:
     """Why the model call failed, as the runner reads it: who refused, with what, and why.
 
@@ -99,6 +148,13 @@ def _completion(model: str, content: str) -> dict[str, Any]:
             "created": int(time.time()), "model": model,
             "choices": [{"index": 0, "finish_reason": "stop",
                          "message": {"role": "assistant", "content": content}}]}
+
+
+def with_usage(completion: dict[str, Any], usage: list[TokenUsage] | None) -> dict[str, Any]:
+    """``completion`` carrying the step's reported usage; unchanged when there is none to report."""
+    if usage is None:
+        return completion
+    return {**completion, USAGE_FIELD: [entry.model_dump() for entry in usage]}
 
 
 def create_app(complete: Completer, model: str, prompt: AnswerPrompt, *, provider: str,
@@ -125,16 +181,16 @@ def create_app(complete: Completer, model: str, prompt: AnswerPrompt, *, provide
             history = sessions.setdefault(request.user, [])
             if (request.metadata or {}).get("memrank_op") == FEED_OP:
                 history.extend(request.messages)
-                return _completion(model, "")
-            context = _history_text(history)
+                return with_usage(_completion(model, ""), [])
+            stored = list(history)
         question, date = _question(request.messages)
         try:
-            answer = generate_answer(complete, question=question, context=context, model=READER,
-                                     prompt=prompt, query_date=date)
+            with collecting(READER_COMPONENT) as used:
+                answer = _answer_fitting(complete, prompt, stored, question, date)
         except Exception as exc:  # noqa: BLE001 - reported to the caller, never swallowed
             # A bare 500 would hide why. The provider's own words, and its status when it
             # answered, are what the runner records and explains (memrank.loop.explain).
             raise HTTPException(502, detail=provider_failure(exc, provider, key_name)) from exc
-        return _completion(model, answer)
+        return with_usage(_completion(model, answer), used.reported())
 
     return app

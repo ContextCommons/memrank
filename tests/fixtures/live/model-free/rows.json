@@ -19,7 +19,8 @@
       "answer": "swordfish",
       "error": null,
       "elapsed_ms": 12.0,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     },
     {
       "question_id": "m1_q1",
@@ -40,7 +41,8 @@
       "answer": "tuna",
       "error": null,
       "elapsed_ms": 11.0,
-      "retrieval_ms": null
+      "retrieval_ms": null,
+      "usage": null
     }
   ],
   "judging": {

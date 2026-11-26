@@ -260,5 +260,6 @@ def _create(evaluator: Evaluator, agent: AgentSpec, options: RunOptions) -> str:
     created = evaluator.create(RunCreate(evaluation=options.evaluation, agent=agent.ref,
                                          cases=options.cases, questions=options.questions,
                                          seed=options.seed,
-                                         judge=options.judge is not None))
+                                         judge=options.judge is not None,
+                                         prices=agent.prices))
     return created.run_id

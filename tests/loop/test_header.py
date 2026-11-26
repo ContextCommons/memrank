@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import sys
+from itertools import groupby
 
 import pytest
 
@@ -33,6 +34,8 @@ from tests.service.conftest import PLAN
 
 #: Every ANSI escape memrank emits: SGR colour and OSC 8 links.
 ANSI = re.compile(r"\x1b\]8;;[^\x1b]*\x1b\\|\x1b\[[0-9;]*m")
+#: A progress line, and the number of the case it reports on.
+PROGRESS = re.compile(r"^case (\d+)/\d+ ")
 
 
 @pytest.fixture
@@ -50,8 +53,10 @@ def agent(world, tmp_path) -> str:  # noqa: F811 - the fixture, used by name
 def run(mp, capsys, agent: str) -> tuple[str, str]:
     """``memrank run locomo --agent <agent> --no-judge``; what it wrote to stdout and stderr.
 
-    One lane: two cases side by side interleave their progress lines in whatever order the
-    threads reach them, and two runs' transcripts are compared line for line.
+    One feed and one answer at a time, so each case's own steps run, and print, in order. Feeds
+    and answers are separate stages that run side by side even so (:mod:`memrank.loop.stages`),
+    so one case's feed can print between another's asks: two runs' transcripts agree case by
+    case, not line for line (:func:`_same_words`).
     """
     mp.setattr(sys, "argv", ["memrank", "run", "locomo", "--agent", agent, "--no-judge",
                              "--concurrency", "1"])
@@ -108,9 +113,24 @@ def test_no_color_gets_the_same_words_plain_even_on_a_terminal(monkeypatch, caps
 
 
 def _same_words(one: str, other: str) -> bool:
-    """Equal once run ids, timings and the run's folder are masked: two runs, same transcript."""
+    """Equal once run ids, timings and the run's folder are masked: two runs, same transcript.
+
+    Up to how the cases' progress lines interleave, which is completion order: each case's own
+    lines and every other line must agree in order.
+    """
     def mask(text: str) -> str:
         text = re.sub(r"\d{8}-\d{6}__\w+__\w+", "<run>", text)
         text = re.sub(r"\d+\.\d\ds", "<s>", text)
         return re.sub(r"\d+ ms|\d+\.\d s|\d+ min \d+ s", "<s>", text)
-    return mask(one) == mask(other)
+    return _by_case(mask(one)) == _by_case(mask(other))
+
+
+def _by_case(text: str) -> list[str]:
+    """``text``'s lines, each run of progress lines stably sorted by case: one order for all."""
+    def case(line: str) -> int:
+        return int(PROGRESS.match(line).group(1))  # type: ignore[union-attr]
+    lines: list[str] = []
+    for progress, block in groupby(text.splitlines(), key=lambda line: bool(PROGRESS.match(line))):
+        block_lines = list(block)
+        lines.extend(sorted(block_lines, key=case) if progress else block_lines)
+    return lines

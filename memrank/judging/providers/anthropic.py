@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from memrank.judging.providers import usage
 from memrank.judging.providers.errors import ProviderError
 from memrank.judging.providers.spec import ResolvedJudge
 from memrank.judging.providers.types import Send
@@ -38,6 +39,18 @@ def _refusal(exc: Any, provider: str) -> ProviderError:
     return ProviderError(message, provider=provider, status_code=exc.status_code,
                          request_id=getattr(exc, "request_id", None),
                          retry_after=rate_limit.retry_after_seconds(exc))
+
+
+def _record(provider: str, model: str, msg: Any) -> None:
+    """The call's billed tokens: Anthropic's ``input_tokens`` excludes cache reads and writes,
+    which are input all the same, so they are added back."""
+    billed = getattr(msg, "usage", None)
+    if billed is None:
+        usage.record(provider, model, None, None)
+        return
+    cached = (getattr(billed, "cache_creation_input_tokens", None) or 0) + \
+        (getattr(billed, "cache_read_input_tokens", None) or 0)
+    usage.record(provider, model, billed.input_tokens + cached, billed.output_tokens)
 
 
 def anthropic_send(target: ResolvedJudge, api_key: str, *, max_tokens: int) -> Send:
@@ -56,6 +69,7 @@ def anthropic_send(target: ResolvedJudge, api_key: str, *, max_tokens: int) -> S
                 messages=[{"role": "user", "content": user}], **sampling)
         except anthropic.APIStatusError as exc:
             raise _refusal(exc, target.provider) from exc
+        _record(target.provider, model, msg)
         return "".join(b.text for b in msg.content if isinstance(b, anthropic.types.TextBlock))
 
     return send

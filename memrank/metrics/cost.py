@@ -26,21 +26,21 @@ from functools import lru_cache
 import tiktoken
 
 from memrank.core import Document
+from memrank.metrics.prices import PRICE_TABLE_EFFECTIVE_DATE, PRICE_TABLE_VERSION, PRICES
 
 ENCODING_NAME = "o200k_base"
-PRICING_TABLE_VERSION = "2026-06-10.1"  # added Anthropic claude-sonnet-4-6/opus-4-8/haiku-4-5
-PRICING_EFFECTIVE_DATE = "2026-06-02"
 
-# USD per 1M tokens: (input, output). Input rate is what the demo uses.
+#: The one price table's version (:mod:`memrank.metrics.prices`), under the names receipts use.
+PRICING_TABLE_VERSION = PRICE_TABLE_VERSION
+PRICING_EFFECTIVE_DATE = PRICE_TABLE_EFFECTIVE_DATE
+
+#: Providers whose rows this module prices by bare model name, as it always has.
+_BARE_NAME_PROVIDERS = ("anthropic", "openai")
+
+# USD per 1M tokens: (input, output), read from the one table. Input rate is what the demo uses.
 _PRICES: dict[str, tuple[float, float]] = {
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (2.50, 10.00),
-    "gpt-4.1-mini": (0.40, 1.60),
-    # Anthropic models (rates as of 2026-06-10)
-    "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-opus-4-8": (15.00, 75.00),
-    "claude-haiku-4-5": (1.00, 5.00),
-}
+    model: (price.input_per_mtok, price.output_per_mtok)
+    for (provider, model), price in PRICES.items() if provider in _BARE_NAME_PROVIDERS}
 
 
 @lru_cache(maxsize=1)

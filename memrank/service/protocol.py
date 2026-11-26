@@ -31,7 +31,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from memrank.service.supplied import AppliedPrice, SuppliedPrice, supplied_table
 
 #: The shipped evaluations the service can put to an agent: the answer-judged ones. Anything
 #: else it runs is an evaluation file (:mod:`memrank.definitions`).
@@ -80,6 +82,15 @@ class RunCreate(BaseModel):
                                   description="Sample at most this many questions per case")
     seed: int = 0
     judge: bool = Field(default=True, description="False records answers and never scores them")
+    #: Prices the user gave for this run (the agent file's ``prices:``), winning over the table's
+    #: for their provider and model. Absent from a request made before they existed.
+    prices: list[SuppliedPrice] = Field(default_factory=list)
+
+    @field_validator("prices")
+    @classmethod
+    def _each_pair_once(cls, prices: list[SuppliedPrice]) -> list[SuppliedPrice]:
+        supplied_table(prices)  # refuses a provider and model given two prices
+        return prices
 
 
 class RunCreated(BaseModel):
@@ -138,6 +149,30 @@ class Step(BaseModel):
     progress: Progress | None = None
 
 
+class TokenUsage(BaseModel):
+    """What one paid component of the agent used on a step, as the agent reports its provider
+    billed it: one entry per component, or per billed call.
+
+    Self-reported, like the retrieval time: memrank tokenizes nothing for it and cannot check
+    it. ``component`` names the part (``reader`` is the conventional name for the model that
+    writes the answer; ``extractor``, ``embedder`` ...). ``input_tokens`` is all the input billed,
+    cached or not. An embedding entry carries input tokens only: ``output_tokens`` None.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    component: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+
+
+#: The component name for the model that writes the answer; its input tokens on an ask step are
+#: the question's context tokens.
+READER_COMPONENT = "reader"
+
+
 class StepResult(BaseModel):
     """What happened when the runner carried out a step: exactly one of the three outcomes."""
 
@@ -150,6 +185,9 @@ class StepResult(BaseModel):
     #: The agent's own report of its retrieval time for this answer, in milliseconds. Declared,
     #: not measured: ``elapsed_ms`` is memrank's clock, this is the agent's word (ATO-2595).
     retrieval_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    #: The tokens the agent reports its paid components used on this step; None when it reported
+    #: none, ``[]`` when it reported that nothing paid was called. Declared, never measured.
+    usage: list[TokenUsage] | None = None
 
     @model_validator(mode="after")
     def _exactly_one(self) -> StepResult:
@@ -160,6 +198,8 @@ class StepResult(BaseModel):
             raise ValueError("report a failed step as error, not ok=false")
         if self.retrieval_ms is not None and self.answer is None:
             raise ValueError("only an answer carries the agent's retrieval time")
+        if self.usage is not None and self.error is not None:
+            raise ValueError("a failed step carries no usage")
         return self
 
 
@@ -244,6 +284,8 @@ class QuestionOutcome(BaseModel):
     elapsed_ms: float | None = None
     #: The retrieval time the agent reported for this answer; None when it reported none.
     retrieval_ms: float | None = None
+    #: The tokens the agent reported for this answer's ask step; None when it reported none.
+    usage: list[TokenUsage] | None = None
     score: float | None = None
     passed: bool | None = None
     rationale: str | None = None
@@ -270,6 +312,8 @@ class CaseOutcome(BaseModel):
     status: str = Field(description="complete | failed | pending")
     error: str | None = None
     restarts: int = 0
+    #: The tokens the agent reported for this case's feed (its last); None when it reported none.
+    feed_usage: list[TokenUsage] | None = None
     questions: list[QuestionOutcome]
 
 
@@ -423,6 +467,62 @@ class ReportedTiming(BaseModel):
     answers: int
 
 
+class TokenStat(BaseModel):
+    """A token count per step, over the steps that reported it."""
+
+    mean: float
+    p50: float
+    p95: float
+    #: How many steps carried it.
+    n: int
+
+
+class ComponentUsage(BaseModel):
+    """One component's reported tokens summed over a run's steps of one kind, and their cost."""
+
+    step: Literal["feed", "ask"]
+    component: str
+    provider: str
+    model: str
+    input_tokens: int
+    #: None when no entry of it reported output tokens (an embedder).
+    output_tokens: int | None
+    #: Its cost in US dollars; None when the run's cost was refused.
+    cost_usd: float | None
+
+
+class UsageSummary(BaseModel):
+    """The agent's self-reported token usage over a run, and what it costs.
+
+    Reported, never measured: memrank adds up what the agent said its providers billed and prices
+    it from one versioned table (:mod:`memrank.metrics.prices`) and the prices the run was given
+    (``supplied_prices``). A step that reported nothing is left out, never counted as zero. When
+    any reported provider/model has neither price the cost is refused -- ``cost_refused`` says
+    which -- and the tokens are still kept.
+    """
+
+    #: Answers recorded, and how many of them reported usage.
+    answers: int
+    answers_reported: int
+    #: Conversations in the run, and how many of their feeds reported usage.
+    conversations: int
+    conversations_reported: int
+    #: The reader's input tokens per answer; None when no answer reported a reader entry.
+    context_tokens: TokenStat | None = None
+    components: list[ComponentUsage] = Field(default_factory=list)
+    #: The price table these costs came from (:data:`memrank.metrics.prices.PRICE_TABLE_VERSION`).
+    price_table_version: str
+    #: Mean ask-step cost x 1,000,000, over the answers that reported usage.
+    cost_per_million_queries_usd: float | None = None
+    #: Mean feed-step cost, over the conversations whose feed reported usage.
+    ingest_cost_per_conversation_usd: float | None = None
+    #: Why no cost was computed: the provider/model pairs with no price, table or supplied.
+    cost_refused: str | None = None
+    #: Each price the run was given that its cost used, with its rates; empty when the table
+    #: priced everything. Absent from a result recorded before supplied prices existed.
+    supplied_prices: list[AppliedPrice] = Field(default_factory=list)
+
+
 class RunResult(BaseModel):
     """Scores, their variability, and every case's outcome."""
 
@@ -443,6 +543,8 @@ class RunResult(BaseModel):
     latency_ms: dict[str, float | None]
     #: The agent's own retrieval time per answer, when it reported any; None when it did not.
     retrieval: ReportedTiming | None = None
+    #: The agent's self-reported token usage and its cost; None when it reported none.
+    usage: UsageSummary | None = None
     #: Total evaluation runtime: how long the run was going, from its start until its last
     #: answer was graded, without the time it sat stopped between resumes. Recorded by
     #: ``memrank run`` (:mod:`memrank.loop.runtime`); None when it could not be known exactly,

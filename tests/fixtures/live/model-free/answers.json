@@ -5,6 +5,7 @@
       "status": "complete",
       "error": null,
       "restarts": 0,
+      "feed_usage": null,
       "questions": [
         {
           "case_id": "m1",
@@ -25,6 +26,7 @@
           "error": null,
           "elapsed_ms": 12.0,
           "retrieval_ms": null,
+          "usage": null,
           "score": 1.0,
           "passed": true,
           "rationale": "exact match",
@@ -50,6 +52,7 @@
           "error": null,
           "elapsed_ms": 11.0,
           "retrieval_ms": null,
+          "usage": null,
           "score": 0.0,
           "passed": false,
           "rationale": "no exact match",

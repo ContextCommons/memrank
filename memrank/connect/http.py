@@ -19,7 +19,9 @@ query language AWS's CLI uses, so ``choices[0].message.content`` means what it m
 
 ``ask.retrieval_ms`` optionally names where the agent reports its own memory retrieval time
 for the answer, in milliseconds; memrank records it beside the time it measures itself and never
-in place of it (:mod:`memrank.connect.reply`).
+in place of it (:mod:`memrank.connect.reply`). ``ask.usage`` and ``feed.usage`` likewise name
+where it reports the tokens its paid components used on the step; a feed of several requests
+reports the entries of them all.
 
 ``feed: chat`` replays every past turn through the ask request, one at a time, for an agent
 that has no endpoint to load history into; the replies are discarded.
@@ -43,9 +45,9 @@ from memrank.connect.base import (
     Answer,
     ConnectorConfigError,
 )
-from memrank.connect.reply import ReplyReader
+from memrank.connect.reply import ReplyReader, UsageReader, combined
 from memrank.rate_limit import RateLimitGate, retry_after_seconds
-from memrank.service.protocol import Step
+from memrank.service.protocol import Step, TokenUsage
 
 #: A body is shown in an error up to this length; agents can return pages of HTML on a 500.
 _ERROR_BODY_CHARS = 300
@@ -72,12 +74,16 @@ class Call(BaseModel):
 class FeedCall(Call):
     #: How much history one request carries: a turn, a session, or the whole case.
     per: Literal["turn", "session", "case"] = "session"
+    usage: str | None = Field(
+        default=None, description="JMESPath to the agent's reported token usage for the feed")
 
 
 class AskCall(Call):
     answer: str = Field(description="JMESPath to the answer in the JSON response")
     retrieval_ms: str | None = Field(
         default=None, description="JMESPath to the agent's own retrieval time, in milliseconds")
+    usage: str | None = Field(
+        default=None, description="JMESPath to the agent's reported token usage for the answer")
 
 
 class HttpSpec(BaseModel):
@@ -134,7 +140,8 @@ class HttpConnector:
     def __init__(self, spec: HttpSpec, transport: httpx.BaseTransport | None = None,
                  gate: RateLimitGate | None = None) -> None:
         self.spec = spec
-        self._reply = ReplyReader(spec.ask.answer, spec.ask.retrieval_ms)
+        self._reply = ReplyReader(spec.ask.answer, spec.ask.retrieval_ms, spec.ask.usage)
+        self._feed_usage = UsageReader(None if spec.feed == "chat" else spec.feed.usage)
         self._http = httpx.Client(base_url=spec.base_url, timeout=spec.timeout_s,
                                   headers=_headers(spec.auth), transport=transport)
         self.gate = gate or RateLimitGate()
@@ -175,20 +182,34 @@ class HttpConnector:
         if self.spec.reset is not None:
             self._send(self.spec.reset, template.base_vars(step, self.spec.vars))
 
-    def feed(self, step: Step) -> None:
+    def feed(self, step: Step) -> list[TokenUsage] | None:
+        """Every request of the feed; the usage all their replies reported, together."""
         sessions = step.sessions or []
         feed = self.spec.feed
         if feed == "chat":
-            for turn in (t for s in sessions for t in s.turns):
-                self._ask(self._replayed(step, template.turn_vars(step, turn, self.spec.vars)))
-        elif feed.per == "case":
-            self._send(feed, template.case_vars(step, self.spec.vars))
+            return combined([self._ask(self._replayed(
+                step, template.turn_vars(step, turn, self.spec.vars))).usage
+                for turn in (t for s in sessions for t in s.turns)])
+        if feed.per == "case":
+            batches = [template.case_vars(step, self.spec.vars)]
         elif feed.per == "session":
-            for session in sessions:
-                self._send(feed, template.session_vars(step, session, self.spec.vars))
+            batches = [template.session_vars(step, session, self.spec.vars)
+                       for session in sessions]
         else:
-            for turn in (t for s in sessions for t in s.turns):
-                self._send(feed, template.turn_vars(step, turn, self.spec.vars))
+            batches = [template.turn_vars(step, turn, self.spec.vars)
+                       for turn in (t for s in sessions for t in s.turns)]
+        return combined([self._fed(feed, variables) for variables in batches])
+
+    def _fed(self, feed: FeedCall, variables: dict[str, Any]) -> list[TokenUsage] | None:
+        response = self._send(feed, variables)
+        if feed.usage is None:
+            return None
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AgentError("feed response is not JSON, as the spec's feed.usage says it is: "
+                             f"{response.text[:_ERROR_BODY_CHARS]}") from exc
+        return self._feed_usage.read(payload, "the feed response")
 
     def _replayed(self, step: Step, turn: dict[str, Any]) -> dict[str, Any]:
         """Ask-shaped variables whose question is one past turn, attributed."""

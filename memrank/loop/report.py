@@ -19,7 +19,7 @@ what the agent got through (:func:`achieved`) and why answers failed (:func:`fai
 
 from __future__ import annotations
 
-from memrank.loop import readout
+from memrank.loop import readout, spend
 from memrank.loop.trace import RunTrace
 from memrank.outcome import Kind, Link, Outcome
 from memrank.service.protocol import QuestionOutcome, RunResult
@@ -98,6 +98,7 @@ def result_facts(result: RunResult,
     if experimental:
         facts.append(("Experimental", f"{', '.join(experimental)}: {EXPERIMENTAL_WORDS}"))
     facts.extend(_rows("Speed", readout.speed_lines(result)))
+    facts.extend(spend.usage_lines(result.usage))
     judge = result.identity.judge_label()
     if judge:
         facts.append(("Judged by", judge))

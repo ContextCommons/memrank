@@ -27,6 +27,7 @@ from typing import Any
 
 import httpx
 
+from memrank.judging.providers import usage
 from memrank.judging.providers.errors import ProviderError
 from memrank.judging.providers.spec import ResolvedJudge
 from memrank.judging.providers.types import Send
@@ -97,7 +98,9 @@ def openai_send(target: ResolvedJudge, api_key: str, *, max_tokens: int,
         for attempt in range(_RETRIES + 1):
             response = client.post("/chat/completions", json=body)
             if response.is_success:
-                return _text(response, target.provider)
+                text = _text(response, target.provider)
+                usage.record_openai(target.provider, model, response.json())
+                return text
             if not _is_transient(response.status_code) or attempt == _RETRIES:
                 raise _refusal(response, target.provider)
             sleep(_BACKOFF_BASE_S * 2 ** attempt)
