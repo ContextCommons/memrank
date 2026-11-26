@@ -59,8 +59,9 @@ def client(engine) -> TestClient:
     return TestClient(service_app.create_app(engine))
 
 
-def create(client: TestClient) -> str:
-    response = client.post("/v1/runs", json={"evaluation": "locomo", "agent": {"name": "a"}})
+def create(client: TestClient, **fields) -> str:
+    response = client.post("/v1/runs", json={"evaluation": "locomo", "agent": {"name": "a"},
+                                             **fields})
     assert response.status_code == 200, response.text
     return response.json()["run_id"]
 

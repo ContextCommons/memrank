@@ -34,6 +34,7 @@ from memrank.loop.readout import (
     runtime_words,
     timings,
 )
+from memrank.loop.spend import entry_words, usage_lines
 from memrank.service.protocol import Interval, QuestionOutcome, RunResult
 
 _STYLE = """
@@ -75,6 +76,24 @@ _METRICS = (
 _RETRIEVAL_METRIC = (RETRIEVAL_TIME, "How long the agent says its memory retrieval took per "
                      "question, as it reported it. memrank does not measure it and cannot check "
                      f"it; it is {RETRIEVAL_SCOPE}.")
+
+
+#: Explained only on a run whose agent reported its token usage.
+_USAGE_METRICS = (
+    ("Self-reported tokens", "The tokens the agent says each of its paid components (reader, "
+                             "extractor, embedder ...) was billed for, per step. memrank does "
+                             "not count or check them; a step that reported nothing is left "
+                             "out, never counted as zero."),
+    ("Context tokens per question", "The input tokens of the agent's reader -- the model that "
+                                    "writes the answer -- on one question."),
+    ("Cost per million queries", "The mean cost of one question's reported tokens, times a "
+                                 "million: reported tokens times the provider's list price."),
+    ("Ingest cost per conversation", "The mean cost of the tokens the agent reported for "
+                                     "taking in one conversation's history."),
+    ("Cost not computed", "A reported model missing from memrank's price table is never priced "
+                          "at $0: the run's cost is refused, naming it, and its tokens are "
+                          "still shown."),
+)
 
 
 def _pct(value: float | None) -> str:
@@ -132,12 +151,23 @@ def _speed(result: RunResult) -> str:
         rows.append((timing.name, words))
     body = "".join(f"<tr><th>{escape(name)}</th><td>{escape(words)}</td></tr>"
                    for name, words in rows)
-    return f"<h2>Speed</h2><table id=speed>{body}</table>"
+    return f"<h2>Speed</h2><table id=speed>{body}</table>{_usage(result)}"
+
+
+def _usage(result: RunResult) -> str:
+    """Tokens and cost, as the agent reported them; nothing when it reported none."""
+    rows = usage_lines(result.usage)
+    if not rows:
+        return ""
+    body = "".join(f"<tr><th>{escape(name)}</th><td>{escape(words)}</td></tr>"
+                   for name, words in rows)
+    return f"<h2>Tokens and cost</h2><table id=usage>{body}</table>"
 
 
 def _explained(result: RunResult) -> str:
     metrics = (_RUNTIME_METRIC, *_METRICS,
-               *((_RETRIEVAL_METRIC,) if result.retrieval is not None else ()))
+               *((_RETRIEVAL_METRIC,) if result.retrieval is not None else ()),
+               *(_USAGE_METRICS if result.usage is not None else ()))
     rows = "".join(f"<tr><th>{name}</th><td>{text}</td></tr>" for name, text in metrics)
     return f"<h2>What these numbers mean</h2><table>{rows}</table>"
 
@@ -178,9 +208,11 @@ def _time(q: QuestionOutcome) -> str:
     Retrieval is often a few milliseconds, so it is read in the run-level line's unit rather
     than as seconds, where a 7 ms lookup would round to "0.01 s".
     """
-    if q.retrieval_ms is None:
-        return _seconds(q.elapsed_ms)
-    return f"{_seconds(q.elapsed_ms)} (retrieval {duration(q.retrieval_ms)})"
+    time = _seconds(q.elapsed_ms)
+    if q.retrieval_ms is not None:
+        time += f" (retrieval {duration(q.retrieval_ms)})"
+    used = entry_words(q.usage)
+    return time if used is None else f"{time}<br><span class=muted>{escape(used)}</span>"
 
 
 def _questions(result: RunResult) -> str:

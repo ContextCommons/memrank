@@ -12,7 +12,7 @@ from tests.loop.conftest import WHOAMI
 
 #: The private host an endpoint sits on, which nothing a run prints may name.
 HOST = "llm.internal.example"
-ROUTER = {"name": "router", "adapter": "openai", "key_ref": "ATOMIC_ROUTER_API_KEY",
+ROUTER = {"name": "router", "adapter": "openai", "key_ref": "ROUTER_API_KEY",
           "models_listing": True, "id": "e1", "revision": 3, "fingerprint": "e1@3",
           "api_base": f"https://{HOST}/v1"}
 
@@ -52,7 +52,7 @@ def signed_in(monkeypatch):
 
 
 def test_an_endpoint_judge_resolves_from_the_org_with_its_own_key(signed_in):
-    signed_in({"router": ROUTER}, {"ATOMIC_ROUTER_API_KEY": "rk", "ANTHROPIC_API_KEY": "ak"})
+    signed_in({"router": ROUTER}, {"ROUTER_API_KEY": "rk", "ANTHROPIC_API_KEY": "ak"})
     checked: list[tuple] = []
     hosted = up.connect(judge="router:bedrock/claude-haiku-4-5",
                         check=lambda target, key, listing: checked.append((key, listing)))
@@ -60,7 +60,7 @@ def test_an_endpoint_judge_resolves_from_the_org_with_its_own_key(signed_in):
     judge = hosted.judge
     assert judge is not None and judge.endpoint is not None
     assert (judge.adapter, judge.model, judge.key_name, judge.fingerprint) == (
-        "openai", "bedrock/claude-haiku-4-5", "ATOMIC_ROUTER_API_KEY", "e1@3")
+        "openai", "bedrock/claude-haiku-4-5", "ROUTER_API_KEY", "e1@3")
 
 
 def test_an_unknown_endpoint_is_refused_naming_the_orgs_endpoints_before_any_key(signed_in):
@@ -73,7 +73,7 @@ def test_an_unknown_endpoint_is_refused_naming_the_orgs_endpoints_before_any_key
 
 
 def test_a_model_the_key_cannot_reach_stops_the_run_before_it_starts(signed_in):
-    signed_in({"router": ROUTER}, {"ATOMIC_ROUTER_API_KEY": "rk"})
+    signed_in({"router": ROUTER}, {"ROUTER_API_KEY": "rk"})
     with pytest.raises(ActionRequired) as refused:
         up.connect(judge="router:nope",
                    check=lambda *args: "its models listing does not include 'nope'")

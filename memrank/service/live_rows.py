@@ -46,6 +46,7 @@ from memrank.service.protocol import (
     JudgeIdentity,
     JudgeSource,
     QuestionOutcome,
+    TokenUsage,
 )
 from memrank.service.scoring import Provisional
 
@@ -69,6 +70,8 @@ class AnswerRow(BaseModel):
     error: str | None
     elapsed_ms: float | None
     retrieval_ms: float | None
+    #: The agent's reported token usage for the answer; None when it reported none (0032).
+    usage: list[TokenUsage] | None = None
 
 
 class JudgingRow(BaseModel):
@@ -147,7 +150,7 @@ def answer_row(outcome: QuestionOutcome, position: int) -> AnswerRow:
         question=outcome.question, reference=outcome.reference, grading=outcome.grading,
         category=outcome.category, status="failed" if outcome.status == "failed" else "answered",
         answer=outcome.answer, error=None if outcome.status != "failed" else outcome.error,
-        elapsed_ms=outcome.elapsed_ms, retrieval_ms=outcome.retrieval_ms)
+        elapsed_ms=outcome.elapsed_ms, retrieval_ms=outcome.retrieval_ms, usage=outcome.usage)
 
 
 def _verdict_row(outcome: QuestionOutcome) -> VerdictRow | None:
@@ -183,7 +186,8 @@ def _question(answer: AnswerRow, verdict: VerdictRow | None, *, judged: bool) ->
         case_id=answer.case_id, question_id=answer.question_id, question=answer.question,
         reference=answer.reference, category=answer.category, grading=answer.grading,
         status="failed" if answer.status == "failed" else "not_judged", answer=answer.answer,
-        error=answer.error, elapsed_ms=answer.elapsed_ms, retrieval_ms=answer.retrieval_ms)
+        error=answer.error, elapsed_ms=answer.elapsed_ms, retrieval_ms=answer.retrieval_ms,
+        usage=answer.usage)
     if answer.status == "failed":
         # a failure is the agent's outcome: it scores 0 in a judged run, and has no verdict
         return outcome.model_copy(update={"score": 0.0 if judged else None})

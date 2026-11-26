@@ -82,7 +82,7 @@ def base_url_problem(api_base: str) -> str | None:
 def key_ref_problem(key_ref: str) -> str | None:
     """Why ``key_ref`` cannot name an org secret, or None."""
     if not _KEY_REF_PATTERN.match(key_ref):
-        return "key_ref is the NAME of an org secret, e.g. ATOMIC_ROUTER_API_KEY"
+        return "key_ref is the NAME of an org secret, e.g. MY_ROUTER_API_KEY"
     return None
 
 

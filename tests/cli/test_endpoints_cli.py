@@ -31,10 +31,10 @@ from memrank.runner import app
 runner = CliRunner()
 
 _BASE = "https://router.internal.example/v1"
-_SAVED = {"name": "router", "adapter": "openai", "key_ref": "ATOMIC_ROUTER_API_KEY",
+_SAVED = {"name": "router", "adapter": "openai", "key_ref": "ROUTER_API_KEY",
           "models_listing": True, "id": "e1", "revision": 1, "fingerprint": "e1@1"}
 _ADD = ["endpoints", "add", "router", "--adapter", "openai", "--base-url", _BASE,
-        "--key-ref", "ATOMIC_ROUTER_API_KEY", "--org", "acme"]
+        "--key-ref", "ROUTER_API_KEY", "--org", "acme"]
 
 
 class _Response:
@@ -78,7 +78,7 @@ class _FakeApi:
 def api(monkeypatch):
     fake = _FakeApi({
         ("GET", "/orgs/acme/secrets"): _Response(200, []),
-        ("POST", "/orgs/acme/secrets"): _Response(200, {"stored": "ATOMIC_ROUTER_API_KEY"}),
+        ("POST", "/orgs/acme/secrets"): _Response(200, {"stored": "ROUTER_API_KEY"}),
         ("POST", "/orgs/acme/endpoints"): _Response(200, _SAVED),
         ("GET", "/orgs/acme/endpoints"): _Response(200, [_SAVED]),
         ("DELETE", "/orgs/acme/endpoints/router"): _Response(200, {"deleted": "router"}),
@@ -111,7 +111,7 @@ def test_add_asks_for_a_missing_key_checks_it_then_saves_key_and_endpoint(api, l
         ("GET", "/orgs/acme/secrets"), ("POST", "/orgs/acme/secrets"),
         ("POST", "/orgs/acme/endpoints")]
     assert api.calls[2][2] == {"name": "router", "adapter": "openai", "api_base": _BASE,
-                               "key_ref": "ATOMIC_ROUTER_API_KEY", "models_listing": True}
+                               "key_ref": "ROUTER_API_KEY", "models_listing": True}
     assert "e1@1" in result.output
     assert _BASE not in result.output
     assert "sk-router" not in result.output
@@ -119,9 +119,9 @@ def test_add_asks_for_a_missing_key_checks_it_then_saves_key_and_endpoint(api, l
 
 def test_add_with_a_saved_key_uses_it_without_asking(api, listing):
     api.answers[("GET", "/orgs/acme/secrets")] = _Response(
-        200, [{"name": "ATOMIC_ROUTER_API_KEY", "backend": "local"}])
+        200, [{"name": "ROUTER_API_KEY", "backend": "local"}])
     api.answers[("GET", "/orgs/acme/secrets/resolved")] = _Response(
-        200, {"ATOMIC_ROUTER_API_KEY": "sk-saved"})
+        200, {"ROUTER_API_KEY": "sk-saved"})
     listing["answer"] = False
 
     result = runner.invoke(app, _ADD)
@@ -145,7 +145,7 @@ def test_a_refused_key_saves_nothing(api, listing):
 
 
 @pytest.mark.parametrize("swap", [("router", "openai"), (_BASE, "router.internal.example"),
-                                  ("ATOMIC_ROUTER_API_KEY", "lower-case")])
+                                  ("ROUTER_API_KEY", "lower-case")])
 def test_an_invalid_entry_is_refused_before_anything_is_asked(api, listing, swap):
     result = runner.invoke(app, [swap[1] if arg == swap[0] else arg for arg in _ADD])
 
@@ -159,7 +159,7 @@ def test_ls_shows_the_fingerprint_and_never_a_base_url(api):
 
     assert result.exit_code == 0, result.output
     assert "router" in result.output and "e1@1" in result.output
-    assert "ATOMIC_ROUTER_API_KEY" in result.output
+    assert "ROUTER_API_KEY" in result.output
 
 
 def test_rm_deletes_the_endpoint(api):

@@ -255,6 +255,40 @@ counted as zero, and a reported value that is not a non-negative number fails th
 surface that shows it says it was reported by the agent, and for how many questions when not
 every answer carried it; a run whose agent reports nothing shows nothing extra.
 
+**Tokens and cost an agent reports.** An agent may report, on its feed and its ask replies, the
+tokens its paid components were billed: a list of entries, one per component or per billed call,
+each `{component, provider, model, input_tokens, output_tokens}` (an embedding entry carries input
+tokens only). `reader` is the conventional name for the model that writes the answer; others
+(`extractor`, `embedder`, ...) are the agent's own. The agent file names where the list sits
+(`ask.usage` and `feed.usage` for an HTTP agent, `ask_json.usage` and `feed_json.usage` for a
+command agent; an `openai-chat` agent sends it as the completion's top-level `memrank_usage`).
+
+*Self-reported* means exactly that: the counts are what the agent says its model provider billed,
+copied from the provider's response. memrank tokenizes nothing for them and cannot check them,
+keeps them apart from everything it measures, and never ranks or judges on them; every surface
+that shows them says they were reported by the agent. A step that reports nothing is left out of
+every figure rather than counted as zero, `[]` reports that nothing paid was called, and a list
+that is not well formed fails the step. `input_tokens` is all the input billed, cached or not.
+
+From the reported tokens memrank derives, over each question's recorded answer and each
+conversation's last feed: *context tokens per question* (the input tokens of the `reader` entries
+on the ask step, absent when no answer reported a reader), *cost per million queries* (the mean
+ask-step cost times 1,000,000) and *ingest cost per conversation* (the mean feed-step cost), with
+the tokens and cost of each component kept beside them. Cost is arithmetic and nothing more:
+input tokens times the input price plus output tokens times the output price, per entry. The
+prices come from one versioned table (`memrank/metrics/prices.py`) that holds only prices a
+provider publishes -- every row cites the provider's published page and the date it was read, and
+the run records the table's version -- and from the user. Any other model (a private router, a
+self-hosted model, a negotiated rate) is priced under `prices:` in the agent file, by provider and
+model, in US dollars per million tokens; a price given there also replaces the table's for the
+same provider and model. The result lists every supplied price its cost used, with its rates and
+whether it replaced the table's, and the agent file's sha256, which the run records, covers them.
+Cached input is priced as ordinary input. A provider and model with neither price is never priced
+at $0 and has no fallback price: the run's cost is refused, naming it and saying how to give one,
+while its tokens are kept and shown. So is a call past the length a tiered table rate holds for
+(gpt-5.4 above 272K input tokens), unless a price for it is supplied, which is why an agent using
+such a model reports one entry per call.
+
 **Names and total runtime.** Every surface -- the terminal, `report.html` and the run page --
 names a finished `memrank run`'s timings alike and in the same order. First comes the *total
 evaluation runtime* (`runtime_ms`): how long the run was going, from its start until its last
@@ -396,7 +430,9 @@ says which it is.
 design: same context size as the system under test, so the only variable is selection.
 `full-context` is deliberately rare -- an evaluation whose knowledge base fits inside a current
 context window cannot hold headline status, which is why LoCoMo (16k-26k tokens) is runnable but
-labelled non-discriminative.
+labelled non-discriminative. The `full-context` reference agent (`memrank agents serve full-context`)
+cuts a history longer than its reader's input limit from the oldest end, at whole turns, to the most
+recent part the reader's provider accepts.
 
 Two limitations affect interpretation. **Ingest order is not neutral**: `fixed-context` reads from the start, so a
 corpus whose answers cluster late is disadvantaged in a way ranked retrieval is not. And
